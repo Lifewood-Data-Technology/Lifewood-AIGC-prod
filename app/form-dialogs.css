@@ -1,0 +1,48 @@
+/* Text actions must not inherit the fixed width of a modal close icon. */
+.app-shell .operation-dialog.modal-card > header { padding: 18px 24px; align-items: center; background: var(--surface); }
+.app-shell .operation-dialog.modal-card > header h2 { margin: 0; min-width: 0; font-size: 1.375rem; }
+.app-shell .operation-dialog.modal-card > header > button { flex: 0 0 auto; width: auto; height: auto; min-height: 40px; padding: 8px 14px; font-size: .9375rem; white-space: nowrap; border: 1px solid var(--line); border-radius: 10px; }
+.app-shell .operation-dialog.modal-card > footer { justify-content: flex-end; padding: 14px 24px; margin-top: 0; }
+.upload-summary { font-weight: 600; }
+.upload-result-row { display: grid; gap: 8px; }
+.upload-result-row progress, .upload-total-progress { width: 100%; accent-color: var(--accent); height: 8px; }
+.upload-result-row button { justify-self: start; }
+.upload-result-row.upload-failed small, .upload-result-row.upload-unconfirmed small { color: var(--danger, #b43d32); }
+.operation-minimized { max-width: min(480px, calc(100vw - 32px)); text-align: left; background: var(--surface); color: var(--text); border: 2px solid var(--accent); }
+.app-shell .modal-card.project-form-dialog { position: fixed; inset: 0; margin: auto; padding: 0; width: min(960px, calc(100vw - 32px)); height: min(760px, calc(100dvh - 40px)); max-height: calc(100dvh - 40px); overflow: hidden; background: var(--surface); color: var(--text); border-radius: 18px; border: 1px solid var(--line); }
+.project-form-dialog::backdrop { background: rgb(0 0 0 / .45); }
+html:has(.project-form-dialog[open]), body:has(.project-form-dialog[open]) { overflow: hidden; }
+.project-form-dialog > form { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.project-form-dialog form > header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 16px; padding: 20px 24px 12px; }
+.project-form-dialog h2 { margin: 0; font-size: 1.5rem; }
+.project-form-steps { display: flex; flex-shrink: 0; list-style: none; margin: 0; padding: 12px 24px 20px; gap: 16px; border-bottom: 1px solid var(--line); }
+.project-form-steps li { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .9375rem; flex: 1; }
+.project-form-steps li span { display: grid; place-items: center; width: 28px; height: 28px; flex-shrink: 0; border-radius: 50%; border: 1px solid var(--line); }
+.project-form-steps li[aria-current="step"] { color: var(--text); font-weight: 700; }
+.project-form-steps li[aria-current="step"] span { background: var(--accent); color: white; }
+.project-form-body { overflow-y: auto; overflow-x: hidden; flex: 1; min-height: 0; padding: 20px 24px; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.project-form-body > fieldset { padding: 0; margin: 0; border: 0; min-width: 0; }
+/* Generic form labels are vertical; checkbox choices must explicitly be rows. */
+.app-shell .modal-grid .video-language-picker > div { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); gap: 8px; }
+.app-shell .modal-grid .video-language-picker label { display: flex; flex-direction: row; align-items: center; justify-content: flex-start; min-width: 0; min-height: 44px; margin: 0; padding: 8px 12px; border-radius: 8px; }
+.app-shell .modal-grid .video-language-picker label > input { flex: 0 0 16px; width: 16px; height: 16px; min-height: 0; padding: 0; margin: 0; accent-color: var(--accent); }
+.app-shell .modal-grid .video-language-picker label > span { display: block; font-size: .875rem; font-weight: 500; color: inherit; text-transform: none; overflow-wrap: anywhere; }
+.app-shell .modal-grid .video-language-picker label:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.app-shell .project-form-body .modal-grid { padding: 0; gap: 20px; }
+.app-shell .project-form-body [hidden] { display: none; }
+.project-form-help { font-size: .875rem; line-height: 1.6; color: var(--muted); margin: 0 0 16px; }
+.project-form-owner { display: grid; align-content: start; gap: 8px; min-width: 0; }
+.project-form-owner strong { overflow-wrap: anywhere; }
+.project-form-owner small { color: var(--muted); }
+.project-form-review { display: grid; gap: 8px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); overflow-wrap: anywhere; }
+.project-form-review p { margin: 0; max-height: 100px; overflow-y: auto; white-space: pre-wrap; }
+.project-form-dialog form > footer { display: flex; justify-content: space-between; flex-shrink: 0; flex-wrap: wrap; gap: 12px; padding: 16px 24px; border-top: 1px solid var(--line); background: var(--surface); }
+.project-form-dialog form > footer > div { display: flex; flex-wrap: wrap; gap: 12px; }
+.project-form-dialog .request-document-field { padding: 16px; }
+.project-form-dialog .request-document-field .request-document-drop { min-height: 100px; padding: 16px; }
+@media(max-width:600px) {
+  .project-form-steps { gap: 8px; padding: 12px 16px; }
+  .project-form-steps li { flex-direction: column; align-items: flex-start; font-size: .875rem; }
+  .project-form-dialog form > header, .project-form-dialog form > footer, .project-form-body { padding: 16px; }
+  .app-shell .project-form-body .modal-grid { grid-template-columns: minmax(0,1fr); }
+}

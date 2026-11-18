@@ -1,0 +1,122 @@
+/* Shared sidebar geometry. Brand colours continue to come from lifewood-brand.css. */
+.app-shell > .sidebar {
+  height: 100dvh;
+  min-height: 0;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+.app-shell > .sidebar > :is(.brand, .nav-group-label, .profile-wrap) { flex: none; }
+.app-shell > .sidebar > nav {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(229, 238, 233, .3) transparent;
+  scroll-padding-block: 8px;
+}
+.app-shell > .sidebar > nav::-webkit-scrollbar { width: 6px; }
+.app-shell > .sidebar > nav::-webkit-scrollbar-thumb {
+  border: 0;
+  border-radius: 6px;
+  background: rgba(229, 238, 233, .3);
+}
+.app-shell > .sidebar .profile-wrap { margin-top: 0; padding-top: 10px; }
+.app-shell > .sidebar .profile { width: 100%; margin: 0; }
+.app-shell > .sidebar .profile-menu {
+  bottom: calc(100% + 4px);
+  max-height: min(320px, calc(100dvh - 130px));
+  overflow-y: auto;
+}
+.app-shell > .sidebar .nav-item > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.app-shell > .sidebar :is(.nav-item, .profile, .mobile-close):focus-visible {
+  outline: 2px solid var(--accent-2);
+  outline-offset: -3px;
+}
+
+.app-shell[data-access="system"] { --fixed-sidebar-width: 208px; }
+.app-shell[data-access="system"] > .sidebar { width: var(--fixed-sidebar-width); padding: 14px 0 10px; }
+.app-shell[data-access="system"] > .sidebar > .brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 58px;
+  padding: 0 14px 14px;
+}
+.app-shell[data-access="system"] > .sidebar > .brand::after { inset-inline: 14px; bottom: 0; }
+.app-shell[data-access="system"] > .sidebar > .brand .brand-logo { flex: 1; width: 124px; max-width: 124px; min-width: 0; }
+.app-shell[data-access="system"] > .sidebar > .brand .brand-product { flex: none; width: 64px; max-width: 64px; font-size: 9px; line-height: 1.4; letter-spacing: .02em; white-space: normal; }
+.app-shell[data-access="system"] > .sidebar > .nav-group-label { padding: 12px 18px 8px; margin: 0; font-size: 10px; letter-spacing: .12em; }
+.app-shell[data-access="system"] > .sidebar > nav { padding-block: 2px 8px; gap: 2px; }
+.app-shell[data-access="system"] > .sidebar .admin-navigation .nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 9px;
+  min-height: 42px;
+  width: 100%;
+  padding: 10px 16px 10px calc(18px + min(var(--nav-depth, 0), 4) * 18px);
+  border-radius: 0;
+  font-size: 13px;
+  line-height: 22px;
+  white-space: nowrap;
+}
+.app-shell[data-access="system"] > .sidebar .admin-nav-label { flex: 1; }
+.app-shell[data-access="system"] > .sidebar .admin-nav-chevron { flex: none; margin-left: auto; transition: transform .16s ease; }
+.app-shell[data-access="system"] > .sidebar .admin-navigation-group[aria-expanded="true"] .admin-nav-chevron { transform: rotate(90deg); }
+.app-shell[data-access="system"] > .sidebar .admin-navigation [hidden] { display: none; }
+.app-shell[data-access="system"] > .sidebar .nav-item.active { box-shadow: inset 3px 0 var(--accent); }
+.app-shell[data-access="system"] > .sidebar .profile-wrap { padding-inline: 12px; }
+.app-shell[data-access="system"] > .sidebar .profile-menu { left: 12px; right: 12px; }
+.sidebar-nav-tooltip {
+  position: fixed;
+  z-index: 100;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 4px 16px rgba(15, 35, 24, .16);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
+/* The drawer, trigger and scrim share one breakpoint, including 820px tablets. */
+@media (max-width: 900px) {
+  .app-shell > .sidebar,
+  .app-shell[data-access="system"] > .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(280px, 86vw);
+    transform: translateX(-100%);
+    visibility: hidden;
+    pointer-events: none;
+    box-shadow: none;
+    transition: transform .2s ease, visibility 0s linear .2s;
+  }
+  .app-shell > .sidebar.open {
+    transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
+    box-shadow: 20px 0 50px rgba(0, 0, 0, .2);
+    transition: transform .2s ease, visibility 0s;
+  }
+  .app-shell > .workspace { flex: 1; width: 100%; margin-left: 0; }
+  .app-shell .menu-button { display: grid; flex: none; }
+  .app-shell .mobile-close { display: grid; place-items: center; flex: none; width: 32px; height: 32px; }
+  .app-shell > .scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 35;
+    border: 0;
+    background: rgba(6, 19, 15, .4);
+  }
+  .app-shell[data-access="system"] > .sidebar .admin-navigation .nav-item { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-shell > .sidebar, .app-shell[data-access="system"] > .sidebar .admin-nav-chevron { transition: none; }
+}

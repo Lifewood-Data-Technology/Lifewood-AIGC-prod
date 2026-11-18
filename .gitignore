@@ -1,0 +1,16 @@
+node_modules/
+dist/
+dist-mysql/
+.next/
+*.tsbuildinfo
+.env*
+*.env
+*.pem
+*.key
+*.pfx
+*.log
+*.sql.gz
+*.tar.gz
+*.jsonl
+__pycache__/
+output/

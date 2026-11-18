@@ -1,0 +1,39 @@
+.app-shell[data-access="system"] .admin-directory-sheet{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:20px}
+.app-shell[data-access="system"] .admin-directory-filters,.app-shell[data-access="system"] .admin-directory-tools{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
+.app-shell[data-access="system"] .admin-directory-filters label{display:flex;gap:10px;align-items:center}
+.app-shell[data-access="system"] .admin-directory-table{overflow:auto}
+.app-shell[data-access="system"] .admin-directory table{width:100%;border-collapse:collapse;white-space:nowrap}
+.app-shell[data-access="system"] .admin-directory th,.app-shell[data-access="system"] .admin-directory td{padding:14px 16px;text-align:left;border-bottom:1px solid var(--line)}
+.app-shell[data-access="system"] .admin-directory td button{margin-right:10px}
+.app-shell[data-access="system"] .admin-directory-dialog{position:fixed;inset:0;margin:auto;width:min(620px,calc(100vw - 32px));max-height:calc(100dvh - 48px);overflow:hidden;border:1px solid var(--line);border-radius:8px;padding:24px;background:var(--surface);color:inherit}
+.app-shell[data-access="system"] .admin-directory-dialog h2{display:flex;align-items:center;justify-content:space-between}
+.app-shell[data-access="system"] .admin-directory-dialog label{display:grid;grid-template-columns:100px minmax(0,1fr);align-items:center;gap:16px;margin:20px 0}
+.app-shell[data-access="system"] .admin-directory input,.app-shell[data-access="system"] .admin-directory select{height:38px;min-width:0;border:1px solid var(--line);border-radius:4px;padding:0 10px;background:transparent;color:inherit}
+@media(max-width:600px){.app-shell[data-access="system"] .admin-directory-filters label{width:100%}.app-shell[data-access="system"] .admin-directory-dialog label{grid-template-columns:1fr;gap:6px}}
+.app-shell[data-access="system"] .admin-directory-dialog fieldset{border:0;margin:0;padding:0;min-width:0}
+.app-shell[data-access="system"] .admin-directory input[type="checkbox"]{height:16px;width:16px;padding:0;accent-color:var(--accent)}
+.app-shell[data-access="system"] .admin-directory th{background:var(--surface-2);font-size:13px;font-weight:600}
+.app-shell[data-access="system"] .admin-directory td{font-size:13px;line-height:20px}
+.app-shell[data-access="system"] .admin-directory td:first-child{width:40px}
+.app-shell[data-access="system"] .admin-directory tbody tr:hover{background:var(--surface-2)}
+
+.app-shell[data-access="system"] .admin-directory-dialog > form{display:flex;flex-direction:column;max-height:calc(100dvh - 96px)}
+.app-shell[data-access="system"] .admin-directory-dialog .dialog-scroll-body{flex:1 1 auto;overflow:auto}
+.app-shell[data-access="system"] .admin-directory-dialog footer{justify-content:flex-end;margin:16px 0 0;padding:16px 0 0;border-top:1px solid var(--line)}
+.app-shell[data-access="system"] .admin-directory-dialog header{flex:none}
+.app-shell[data-access="system"] .admin-directory-dialog h2{font-size:18px;font-weight:600;margin:0 0 14px}
+.app-shell[data-access="system"] .admin-directory-dialog:has(.admin-department-form){width:min(740px,calc(100vw - 32px))}
+.app-shell[data-access="system"] .admin-department-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px 20px;padding:8px 0}
+.app-shell[data-access="system"] .admin-department-form > label{grid-template-columns:92px minmax(0,1fr);gap:10px;margin:0;font-size:13px}
+.app-shell[data-access="system"] .admin-full-field{grid-column:1/-1}
+.app-shell[data-access="system"] .admin-department-form input,.app-shell[data-access="system"] .admin-department-form select{height:34px;width:100%;border-radius:4px}
+.app-shell[data-access="system"] .admin-department-form em{color:var(--bad);font-style:normal;margin-right:4px}
+.app-shell[data-access="system"] .admin-radio-field{display:grid;grid-template-columns:92px minmax(0,1fr);gap:10px;align-items:center;font-size:13px}
+.app-shell[data-access="system"] .admin-radio-field > div{display:flex;gap:18px}
+.app-shell[data-access="system"] .admin-radio-field label{display:flex;gap:7px;margin:0;white-space:nowrap}
+.app-shell[data-access="system"] .admin-radio-field input{width:14px;height:14px;accent-color:var(--accent)}
+.app-shell[data-access="system"] .admin-department-scope{padding:14px;background:var(--surface-2);border:1px solid var(--line);border-radius:4px;font-size:12px}
+.app-shell[data-access="system"] .admin-department-scope p{margin:7px 0 0;color:var(--muted)}
+.app-shell[data-access="system"] .admin-department-form textarea{width:100%;resize:vertical;min-height:72px;border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:4px;padding:8px;font:inherit}
+.app-shell[data-access="system"] .admin-status-badge{display:inline-block;padding:3px 8px;border-radius:3px;background:var(--accent-soft);color:var(--accent);font-size:12px}
+@media(max-width:600px){.app-shell[data-access="system"] .admin-department-form{grid-template-columns:minmax(0,1fr)}.app-shell[data-access="system"] .admin-department-form > label{grid-template-columns:78px minmax(0,1fr)}}

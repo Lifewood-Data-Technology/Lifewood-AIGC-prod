@@ -1,0 +1,194 @@
+/* Shared layout for list/query forms. Business fields and filtering logic remain
+   owned by their pages; this file only standardises visual order and sizing. */
+.app-shell .filter-group {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.app-shell .filter-group-heading {
+  grid-column: 1 / -1;
+}
+
+.app-shell .filter-group :is(.crm-toolbar-row, .crm-filters, .request-filters, .project-filters, .notification-filters, .team-filters) {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: end;
+  gap: 1rem;
+  width: 100%;
+  padding: 0;
+}
+
+.app-shell .filter-group .page-search,
+.app-shell .team-filters > label:first-child {
+  grid-column: 1 / -1;
+  width: min(100%, 38rem);
+  max-width: 38rem;
+  min-width: 0;
+}
+
+.app-shell .filter-group :is(label, .toolbar-select) {
+  min-width: 0;
+}
+
+.app-shell .filter-group :is(select, input:not([type="checkbox"]), .select-control) {
+  min-width: 0;
+  min-height: 2.75rem;
+}
+
+.app-shell .filter-group :is(.filter-actions, .crm-export-actions),
+.app-shell .filter-group > .filter-actions,
+.app-shell .filter-group :is(.crm-filters, .request-filters, .project-filters, .notification-filters, .team-filters) > .link-button {
+  grid-column: 1 / -1;
+  justify-self: end;
+}
+
+.app-shell .filter-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: .75rem;
+  min-width: 0;
+}
+
+.app-shell .standards-toolbar,
+.app-shell .account-access-filters.filter-group,
+.app-shell .psm-filters.filter-group,
+.app-shell .asset-library-toolbar.asset-filter-group {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: end;
+  gap: 1rem;
+}
+
+.app-shell .standards-toolbar > .page-search,
+.app-shell .account-access-filters.filter-group > .page-search,
+.app-shell .asset-library-toolbar.asset-filter-group > label {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  width: min(100%, 38rem);
+  max-width: 38rem;
+}
+
+.app-shell .standards-toolbar > label:not(.page-search),
+.app-shell .account-access-filters.filter-group > label:not(.page-search),
+.app-shell .psm-filters.filter-group > label {
+  display: grid;
+  gap: .5rem;
+  min-width: 0;
+  max-width: none;
+}
+
+.app-shell .asset-library-toolbar.asset-filter-group > .asset-owner-filter {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.app-shell .asset-library-toolbar.asset-filter-group > .filter-group-heading {
+  display: flex;
+}
+
+.app-shell .notification-filters > label:not(.page-search) {
+  display: grid;
+  gap: .5rem;
+}
+
+.app-shell .recycle-toolbar.filter-group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+}
+
+.app-shell .recycle-toolbar.filter-group > .page-search {
+  width: min(100%, 38rem);
+  max-width: 38rem;
+}
+
+.app-shell .psm-filters.filter-group {
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: .75rem;
+  background: color-mix(in srgb, var(--surface-2) 70%, var(--surface));
+}
+
+.app-shell .psm-filters.filter-group .psm-result-count {
+  grid-column: 1 / -1;
+}
+
+@container (max-width: 900px) {
+  .app-shell .filter-group :is(.crm-toolbar-row, .crm-filters, .request-filters, .project-filters, .notification-filters, .team-filters),
+  .app-shell .standards-toolbar,
+  .app-shell .account-access-filters.filter-group,
+  .app-shell .psm-filters.filter-group,
+  .app-shell .asset-library-toolbar.asset-filter-group {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 680px) {
+  .app-shell .filter-group :is(.crm-toolbar-row, .crm-filters, .request-filters, .project-filters, .notification-filters, .team-filters),
+  .app-shell .standards-toolbar,
+  .app-shell .account-access-filters.filter-group,
+  .app-shell .psm-filters.filter-group,
+  .app-shell .asset-library-toolbar.asset-filter-group {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-shell .filter-group .page-search,
+  .app-shell .team-filters > label:first-child,
+  .app-shell .standards-toolbar > .page-search,
+  .app-shell .account-access-filters.filter-group > .page-search,
+  .app-shell .asset-library-toolbar.asset-filter-group > label {
+    grid-column: 1;
+    width: 100%;
+    max-width: none;
+  }
+
+  .app-shell .filter-actions {
+    width: 100%;
+    justify-self: stretch;
+  }
+
+  .app-shell .filter-actions > button {
+    flex: 1;
+  }
+}
+
+/* Shared interaction language for every role. Native one-choice selects keep a
+   visible chevron instead of depending on browser-specific rendering. */
+.app-shell :where(
+  button:not(:disabled),
+  a[href],
+  summary,
+  select:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="option"]:not([aria-disabled="true"]),
+  label:has(input[type="checkbox"]:not(:disabled)),
+  label:has(input[type="radio"]:not(:disabled))
+) {
+  cursor: pointer;
+}
+
+.app-shell :where(
+  button:disabled,
+  select:disabled,
+  [role="button"][aria-disabled="true"],
+  [role="option"][aria-disabled="true"],
+  label:has(input[type="checkbox"]:disabled),
+  label:has(input[type="radio"]:disabled)
+) {
+  cursor: not-allowed;
+}
+
+.app-shell select:not(.select-native):not([multiple]):not([size]) {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2.35rem !important;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%) !important;
+  background-position:
+    calc(100% - 1rem) 50%,
+    calc(100% - .7rem) 50% !important;
+  background-size: .38rem .38rem, .38rem .38rem !important;
+  background-repeat: no-repeat !important;
+}

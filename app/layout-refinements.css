@@ -1,0 +1,369 @@
+/* Shared layout contract. Brand palette and workflow-specific media geometry
+   remain owned by lifewood-brand.css and project-operations.css. */
+.app-shell {
+  --page-gutter: clamp(1rem, 2.4vw, 2.75rem);
+  --panel-space: 1.25rem;
+  --control-height: 2.75rem;
+}
+.app-shell .main-content {
+  min-width: 0;
+  max-width: 120rem;
+  padding: 2rem var(--page-gutter) 3.5rem;
+  gap: 1.5rem;
+}
+.app-shell .topbar { padding-inline: var(--page-gutter); gap: 1rem; }
+/* Keep the original two-part brand within the fixed navigation rail. */
+@media (min-width:901px) {
+.app-shell .sidebar > .brand { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; flex-shrink:0; }
+.app-shell .sidebar > .brand .brand-logo { width:100%; max-width:124px; min-width:0; }
+.app-shell .sidebar > .brand .brand-product { width:7.6em; max-width:none; white-space:normal; font-size:clamp(10.5px,.6vw,12px); line-height:1.25; }
+}
+.app-shell .page-heading {
+  min-height: auto;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+  padding: 0;
+  margin: 0 0 .25rem;
+}
+.app-shell .page-heading > div { min-width: 0; }
+.app-shell .page-heading h1 { margin: .5rem 0 0; overflow-wrap: anywhere; }
+.app-shell .page-heading .eyebrow { font-size: .875rem; }
+.app-shell :is(.crm-heading-actions, .panel-tools, .project-heading-actions) {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: .75rem;
+}
+.app-shell :is(.work-panel, .panel) > header {
+  min-height: 3.5rem;
+  padding: 1rem var(--panel-space);
+  gap: .75rem 1.5rem;
+  font-size: .9375rem;
+  line-height: 1.4;
+  letter-spacing: .025em;
+}
+.app-shell .work-panel > header span:first-child { min-width: 0; overflow-wrap: anywhere; letter-spacing: .025em; }
+.app-shell .work-panel > header span + span { flex-shrink: 0; }
+.app-shell .work-panel .panel-body { min-width: 0; padding: var(--panel-space); }
+.app-shell .work-panel.dashboard-table .panel-body { padding: var(--panel-space); }
+
+/* Keep filters and results within the same panel, with a single consistent inset. */
+.app-shell .panel-body > .filter-group,
+.app-shell .production-task-shell > .filter-group {
+  margin: 0 0 1.25rem;
+  padding: 1rem;
+}
+.app-shell .filter-group-heading {
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: .375rem 1rem;
+  padding-bottom: .75rem;
+  margin-bottom: 1rem;
+}
+.app-shell .filter-group-heading strong { font-size: .9375rem; }
+.app-shell .filter-group-heading small { font-size: .875rem; }
+.app-shell .filter-group .crm-toolbar-row,
+.app-shell .request-toolbar-row {
+  align-items: flex-end;
+  gap: 1rem;
+}
+.app-shell .filter-group .toolbar-select {
+  flex: 1 1 11rem;
+  min-width: min(100%, 10rem);
+  gap: .5rem;
+}
+.app-shell .filter-group label > span,
+.app-shell .filter-group .toolbar-select > span {
+  font-size: .875rem;
+  line-height: 1.4;
+}
+.app-shell :is(.crm-filters, .request-filters, .project-filters, .notification-filters) {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  align-items: end;
+  gap: 1rem;
+}
+.app-shell :is(.crm-filters, .request-filters) { padding-top: 1rem; }
+.app-shell .project-filters > .page-search { grid-column: 1 / -1; width: min(100%, 28rem); }
+.app-shell .filter-actions,
+.app-shell .crm-export-actions { flex-wrap: wrap; align-items: center; gap: .75rem; }
+.app-shell .filter-group :is(select, input:not([type="checkbox"]):not([type="radio"]):not([type="file"])) {
+  min-height: var(--control-height);
+  height: var(--control-height);
+  padding: .625rem .75rem;
+  font-size: .9375rem;
+}
+.app-shell .page-search,
+.app-shell .filter-group .page-search,
+.app-shell .list-filter-toolbar .page-search {
+  width: min(100%, 28rem);
+  min-width: min(100%, 16rem);
+  max-width: 100%;
+  flex: 1.5 1 18rem;
+  min-height: var(--control-height);
+  height: var(--control-height);
+  align-self: end;
+  gap: .625rem;
+  padding: 0 .875rem;
+  font-size: .9375rem;
+}
+.app-shell .page-search > span {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 1.25rem;
+  white-space: nowrap;
+}
+.app-shell .page-search:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.app-shell .page-search input { flex: 1; min-width: 0; }
+.app-shell .filter-group .link-button { min-height: var(--control-height); }
+.app-shell .panel-body > .list-status-tabs,
+.app-shell .production-task-shell > .list-status-tabs {
+  margin: 0 0 1rem;
+  padding: .5rem 0;
+  gap: .5rem;
+  flex-wrap: wrap;
+}
+.app-shell .list-status-tabs button { min-height: var(--control-height); }
+
+/* One cell inset: nested names and metadata never receive additional padding. */
+.app-shell :is(.work-table-wrap, .explorer-table-wrap) {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+.app-shell .work-panel .work-table { min-width: 48rem; }
+.app-shell .work-panel .crm-table { min-width: 77.5rem; }
+.app-shell .work-panel .project-table-with-progress { min-width: 87.5rem; }
+.app-shell :is(.work-table, .explorer-table) :is(th, td) {
+  padding: 1rem;
+  vertical-align: middle;
+  text-align: left;
+  line-height: 1.5;
+}
+.app-shell :is(.work-table, .explorer-table) th {
+  font-size: .9375rem;
+  letter-spacing: .025em;
+  font-weight: 700;
+}
+.app-shell :is(.work-table, .explorer-table) td { font-size: 1rem; }
+.app-shell :is(.work-table, .explorer-table) td strong {
+  margin-inline: 0;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+.app-shell :is(.work-table, .explorer-table) td > small {
+  padding: 0;
+  margin: .25rem 0 0;
+  font-size: .875rem;
+  line-height: 1.5;
+}
+.app-shell :is(.work-table, .explorer-table) .check-column {
+  width: 2.75rem;
+  min-width: 2.75rem;
+  padding-inline: .75rem;
+  text-align: center;
+}
+.app-shell .table-actions { gap: .375rem; align-items: center; justify-content: flex-start; }
+.app-shell .table-actions :is(a, button) {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  padding: .25rem .375rem;
+  font-size: .9375rem;
+  line-height: 1.4;
+}
+.app-shell .table-pagination {
+  min-height: 3.5rem;
+  padding: 1rem;
+  flex-wrap: wrap;
+  gap: .75rem 1.25rem;
+  font-size: .875rem;
+}
+.app-shell .table-pagination :is(button, select) { min-height: 2.5rem; min-width: 2.5rem; }
+.app-shell .work-table .table-empty-cell { padding: 2.5rem 1rem; text-align: center; }
+
+/* Forms share control sizing without altering checkboxes, file overlays or timelines. */
+.app-shell :is(.modal-grid, .checkpoint-form, .request-planning-settings) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+.app-shell .modal-grid { padding: var(--panel-space); }
+.app-shell :is(.modal-grid, .checkpoint-form, .request-planning-settings) > * { min-width: 0; }
+.app-shell :is(.modal-grid, .checkpoint-form, .language-assignment) label { gap: .5rem; }
+.app-shell :is(.modal-grid, .checkpoint-form, .language-assignment) label > span {
+  font-size: .875rem;
+  letter-spacing: normal;
+  line-height: 1.5;
+}
+.app-shell .modal-grid :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea) {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-height);
+  padding: .625rem .75rem;
+  font-size: 1rem;
+}
+.app-shell .modal-grid textarea { min-height: 7rem; resize: vertical; }
+.app-shell .modal-grid .full-field { grid-column: 1 / -1; }
+.app-shell .modal-grid .language-picker { grid-column: 1 / -1; }
+.app-shell .modal-backdrop { padding: 1rem; }
+.app-shell .modal-card {
+  min-width: 0;
+  max-width: 100%;
+  max-height: calc(100dvh - 2rem);
+  overscroll-behavior: contain;
+}
+.app-shell .modal-card:not(.request-detail-modal) { overflow-y: auto; }
+.app-shell .modal-card > header {
+  align-items: flex-start;
+  padding: var(--panel-space);
+  gap: 1rem;
+}
+.app-shell .modal-card > header > div { min-width: 0; }
+.app-shell .modal-card > header h2 { font-size: 1.5rem; line-height: 1.35; overflow-wrap: anywhere; }
+.app-shell .modal-card > header p { font-size: .9375rem; line-height: 1.6; overflow-wrap: anywhere; }
+.app-shell .modal-card > header > button {
+  flex: 0 0 2.5rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+}
+.app-shell .modal-card > footer {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .75rem;
+  padding: 1rem var(--panel-space);
+}
+.app-shell .modal-card > footer > button { min-height: var(--control-height); }
+.app-shell .request-detail-body { min-height: 0; grid-template-columns: minmax(0, 1fr) 18rem; }
+.app-shell .request-detail-main { padding: var(--panel-space); gap: 1.5rem; }
+.app-shell .request-revision-rail { min-width: 0; padding: var(--panel-space); }
+.app-shell :is(.request-summary-grid, .settings-grid, .dashboard-grid) > * { min-width: 0; }
+.app-shell :is(.checkpoint-workspace, .project-video-task-list, .lifecycle-video-groups) { gap: 1.25rem; }
+.app-shell :is(.checkpoint-workspace > header, .checkpoint-draft-bar, .project-video-task-heading, .explorer-commandbar) { flex-wrap: wrap; gap: 1rem; }
+.app-shell :is(.explorer-main, .asset-detail-main, .request-detail-main) { min-width: 0; }
+.app-shell :is(.explorer-search, .explorer-toolbar nav) { min-width: 0; }
+.app-shell .explorer-commandbar { align-items: center; }
+.app-shell .file-explorer { max-width: 100%; }
+
+/* Administrator identity is separate from the employee directory. */
+.administrator-identity {
+  display: grid;
+  grid-template-columns: minmax(10rem, .7fr) minmax(0, 1.3fr) auto;
+  align-items: center;
+  gap: 1rem 2rem;
+  padding: var(--panel-space);
+  border: 1px solid var(--line);
+  border-radius: .875rem;
+  background: var(--surface);
+}
+.administrator-identity-title, .administrator-identity-email { display: grid; gap: .375rem; min-width: 0; }
+.administrator-identity-title .eyebrow,
+.administrator-identity-email > span:first-child { color: var(--muted); font-size: .875rem; }
+.administrator-identity-title strong { font-size: 1.125rem; }
+.administrator-identity-email > span:last-child { overflow-wrap: anywhere; font-size: 1rem; }
+.administrator-identity > button { min-height: var(--control-height); }
+.app-shell .work-panel .employee-accounts-table { min-width: 73rem; }
+.employee-accounts-table :is(th, td):first-child { min-width: 11rem; }
+.employee-accounts-table .account-email-cell { min-width: 17rem; max-width: 24rem; overflow-wrap: anywhere; }
+.employee-accounts-table :is(th, td):last-child { min-width: 16rem; }
+.app-shell .employee-accounts-panel .account-safety-note { margin: 1rem 0 0; padding: 1rem; font-size: .875rem; line-height: 1.7; }
+
+@media (max-width: 900px) {
+  .app-shell .main-content { padding-block: 1.5rem 2.5rem; }
+  .app-shell .request-detail-body { grid-template-columns: 1fr; }
+  .app-shell .request-revision-rail { border-left: 0; border-top: 1px solid var(--line); }
+  .administrator-identity { grid-template-columns: minmax(0, 1fr) auto; }
+  .administrator-identity-email { grid-row: 2; }
+  .administrator-identity > button { grid-column: 2; grid-row: 1 / 3; }
+}
+@media (max-width: 600px) {
+  .app-shell { --panel-space: 1rem; }
+  .app-shell .main-content { gap: 1.25rem; }
+  .app-shell .page-heading { align-items: flex-start; }
+  .app-shell .page-heading h1 { font-size: 1.75rem; }
+  .app-shell .page-heading > button { width: 100%; margin: 0; }
+  .app-shell .filter-group .crm-toolbar-row { flex-direction: column; align-items: stretch; }
+  .app-shell .filter-group :is(.page-search, .toolbar-select) { width: 100%; min-width: 0; max-width: none; flex: none; }
+  .app-shell :is(.crm-filters, .request-filters, .project-filters, .standards-toolbar, .notification-filters) { grid-template-columns: 1fr; }
+  .app-shell .crm-export-actions { margin-left: 0; }
+  .app-shell :is(.modal-grid, .checkpoint-form, .request-planning-settings) { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .modal-grid > *, .app-shell .checkpoint-form > * { grid-column: 1 / -1; }
+  .app-shell .modal-card > footer > button { flex: 1 1 9rem; }
+  .app-shell .account-create-body { grid-template-columns: 1fr; }
+  .administrator-identity { grid-template-columns: minmax(0, 1fr); }
+  .administrator-identity-email, .administrator-identity > button { grid-column: auto; grid-row: auto; }
+}
+.business-translation { overflow-wrap: anywhere; white-space: pre-wrap; }
+.business-translation > small { display: block; font-size: 0.75rem; opacity: .75; margin-top: .25rem; }
+.app-shell .business-original-toggle { display: inline; padding: 0; margin-inline-start: .5rem; border: 0; background: none; color: inherit; text-decoration: underline; font-size: .75rem; min-height: 0; box-shadow: none; }
+
+/* The same file actions apply to project originals, personal files and deliveries. */
+.file-detail-actions { display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; margin-top: 1rem; }
+.file-detail-actions > :is(a, button) { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 2.75rem; margin: 0; text-align: center; text-decoration: none; }
+.file-detail-actions > small { font-size: .8125rem; line-height: 1.6; }
+.file-preview-dialog { position: fixed; inset: 0; margin: auto; padding: 0; width: min(64rem, calc(100vw - 2rem)); max-width: calc(100vw - 2rem); max-height: calc(100dvh - 2rem); color: var(--text); }
+.file-preview-dialog::backdrop { background: color-mix(in srgb, var(--text) 45%, transparent); }
+.file-preview-dialog[open] { display: flex; flex-direction: column; }
+.file-preview-dialog > :is(header, footer) { flex-shrink: 0; }
+.file-preview-dialog > header { align-items: flex-start; }
+.file-preview-dialog > header > div { min-width: 0; }
+.file-preview-dialog > header h2 { font-family: inherit; font-size: 1.25rem; line-height: 1.5; overflow-wrap: anywhere; }
+.file-preview-dialog > header > button { flex-shrink: 0; min-width: 2.75rem; min-height: 2.75rem; }
+.file-preview-dialog .asset-preview-dialog-body { min-height: 0; overflow: auto; background: var(--surface-2); }
+.file-preview-dialog .windows-file-preview.has-media { width: 100%; height: auto; min-height: 0; padding: 0; }
+.file-preview-dialog .windows-file-preview.has-media :is(img, video) { display: block; width: 100%; height: auto; max-height: 65dvh; object-fit: contain; }
+.file-preview-dialog .windows-file-preview.has-media.audio { padding: 2rem 1rem; }
+.file-preview-dialog footer { flex-wrap: wrap; gap: .75rem; }
+.file-preview-dialog footer :is(a, button) { min-height: 2.75rem; }
+.file-preview-dialog :is(button, a):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.windows-file-preview.has-media > img { width: 100%; height: 100%; object-fit: contain; }
+.file-detail-drawer .file-detail-cover { aspect-ratio: 16 / 9; height: auto; min-height: 0; overflow: hidden; }
+.file-detail-drawer .file-detail-cover > :is(img, video, canvas) { display: block; width: 100%; height: 100%; max-height: 20rem; object-fit: contain; }
+.file-detail-cover .file-preview-unavailable { margin: 0; padding: 1rem; }
+.file-preview-unavailable { margin: 0; padding: 2rem 1rem; color: var(--text); background: var(--surface); font-size: .875rem; line-height: 1.7; }
+.daily-production-progress { padding: 1.25rem; margin-block: 1rem; border: 1px solid var(--line); border-radius: 1rem; background: var(--surface); }
+.daily-production-progress h3 { margin: 0 0 .75rem; font-size: 1.125rem; }
+.daily-production-progress > p { color: var(--muted); font-size: .875rem; line-height: 1.7; }
+.daily-progress-inputs { display: grid; grid-template-columns: minmax(8rem, 1fr) minmax(12rem, 3fr); gap: 1rem; margin-top: 1rem; }
+.daily-progress-inputs label { display: grid; align-content: start; gap: .5rem; font-size: .875rem; }
+.daily-progress-inputs :is(input, textarea) { width: 100%; min-width: 0; padding: .75rem; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: .5rem; }
+.daily-progress-inputs textarea { min-height: 5rem; resize: vertical; }
+.daily-progress-inputs > button { justify-self: start; grid-column: 1 / -1; }
+.reported-task-progress { display: grid; gap: .5rem; min-width: 0; padding: .875rem 0; }
+.reported-task-progress > div { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; font-size: .875rem; }
+.reported-task-progress > div > b { margin-left: auto; }
+.reported-task-progress progress { width: 100%; height: .625rem; accent-color: var(--accent); border: 0; border-radius: 1rem; overflow: hidden; background: var(--line); }
+.reported-task-progress progress::-webkit-progress-bar { background: var(--line); }
+.reported-task-progress progress::-webkit-progress-value { background: var(--accent); }
+.reported-task-progress progress::-moz-progress-bar { background: var(--accent); }
+.reported-task-progress small { color: var(--muted); font-size: .8125rem; overflow-wrap: anywhere; }
+.reported-task-progress p { margin: 0; font-size: .875rem; overflow-wrap: anywhere; }
+.psm-reported-progress { margin-top: 1rem; border-top: 1px solid var(--line); }
+@media (max-width: 600px) { .daily-progress-inputs { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) {
+  .file-preview-dialog > header, .file-preview-dialog > footer, .file-preview-dialog .asset-preview-dialog-body { padding: 1rem; }
+  .file-preview-dialog footer > :is(a, button) { flex: 1 1 8rem; justify-content: center; text-align: center; }
+}
+
+/* Desktop navigation is a true viewport-fixed rail. The work area owns its
+   offset, so long pages and modal backdrops never expose a blank half-rail. */
+@media (min-width: 901px) {
+  .app-shell { --fixed-sidebar-width:clamp(240px,13.5vw,286px); }
+  .app-shell > .sidebar {
+    position:fixed; inset:0 auto 0 0; width:var(--fixed-sidebar-width);
+    height:100dvh; min-height:100dvh; max-height:100dvh;
+  }
+  .app-shell > .workspace {
+    flex:0 0 calc(100% - var(--fixed-sidebar-width));
+    width:calc(100% - var(--fixed-sidebar-width));
+    margin-left:var(--fixed-sidebar-width);
+  }
+}
+@media (min-width: 901px) and (max-width: 1180px) {
+  .app-shell { --fixed-sidebar-width:232px; }
+}

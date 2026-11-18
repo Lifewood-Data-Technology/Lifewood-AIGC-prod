@@ -1,0 +1,106 @@
+/* Operation and login logs share the compact prototype geometry. */
+.app-shell[data-access="system"] .main-content .admin-log-page { min-width:0; width:100%; font-size:13px; }
+.app-shell[data-access="system"] .main-content .admin-log-workspace { min-height:calc(100dvh - 210px); padding:16px 20px 24px; border-radius:4px; background:var(--surface); }
+.app-shell[data-access="system"] .main-content .admin-log-workspace .data-list-body { padding:0; }
+.app-shell[data-access="system"] .main-content .admin-log-workspace .data-list-toolbar { padding:0; gap:0; }
+.app-shell[data-access="system"] .main-content .admin-log-workspace .data-list-primary { display:grid; grid-template-columns:minmax(0,1fr); align-items:start; gap:16px; }
+.app-shell[data-access="system"] .main-content .admin-log-workspace :is(.data-list-query,.data-list-search,.data-list-actions) { width:100%; min-width:0; margin:0; }
+.app-shell[data-access="system"] .main-content .admin-log-workspace .data-list-actions { margin:0 0 8px; }
+.app-shell[data-access="system"] .main-content .admin-log-workspace .log-query-form { display:flex; flex-wrap:wrap; align-items:center; gap:14px 20px; width:100%; margin:0; padding:0; font-size:13px; }
+.app-shell[data-access="system"] .main-content .log-query-form > label { display:flex; align-items:center; gap:10px; width:auto; margin:0; padding:0; font-weight:500; color:var(--text); }
+.app-shell[data-access="system"] .main-content .log-query-form > label > span { flex:none; white-space:nowrap; }
+.app-shell[data-access="system"] .main-content .admin-log-workspace .log-query-form :is(input,select) { box-sizing:border-box; width:170px; min-width:0; max-width:100%; min-height:32px; height:32px; border:1px solid var(--line); border-radius:4px; padding:5px 9px; background:var(--surface); color:var(--text); font:inherit; box-shadow:none; }
+.app-shell[data-access="system"] .main-content .admin-log-workspace .log-query-form select { width:140px; }
+.app-shell[data-access="system"] .main-content .admin-log-workspace .log-query-form input::placeholder { color:var(--faint); }
+.app-shell[data-access="system"] .main-content .log-query-form .log-date-range { display:flex; align-items:center; gap:10px; min-width:0; flex-wrap:wrap; }
+.app-shell[data-access="system"] .main-content .log-date-range > span:first-child { flex:none; white-space:nowrap; }
+.app-shell[data-access="system"] .main-content .log-date-range > label { display:block; margin:0; padding:0; }
+.app-shell[data-access="system"] .main-content .admin-log-workspace .log-date-range input { width:140px; }
+.app-shell[data-access="system"] .main-content .log-query-actions { display:flex; align-items:center; gap:10px; }
+.app-shell[data-access="system"] .main-content .admin-log-workspace .log-query-actions button { height:32px; min-height:32px; padding:4px 16px; font-size:13px; border-radius:4px; }
+.app-shell[data-access="system"] .main-content .log-toolbar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; width:100%; }
+.app-shell[data-access="system"] .main-content :is(.log-toolbar-actions,.log-toolbar-utilities) { display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.app-shell[data-access="system"] .main-content .log-toolbar-utilities { margin-left:auto; }
+.app-shell[data-access="system"] .main-content .admin-log-workspace .log-toolbar button { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:30px; height:30px; margin:0; padding:4px 12px; font-size:12px; line-height:20px; font-weight:400; border:1px solid var(--line); border-radius:4px; background:var(--surface); box-shadow:none; }
+.app-shell[data-access="system"] .main-content .log-toolbar svg, .admin-log-dialog svg { width:15px; height:15px; flex:none; }
+.app-shell[data-access="system"] .main-content .admin-log-workspace .log-toolbar .log-icon-button { width:30px; min-width:30px; padding:6px; border-radius:50%; color:var(--muted); }
+.app-shell[data-access="system"] .main-content .admin-log-workspace .log-danger-button, .admin-log-dialog .log-danger-button { color:var(--bad); border:1px solid color-mix(in srgb,var(--bad) 25%,var(--line)); background:color-mix(in srgb,var(--bad) 5%,var(--surface)); }
+.app-shell[data-access="system"] .main-content .admin-log-workspace .log-export-button { color:var(--warn); border-color:color-mix(in srgb,var(--warn) 28%,var(--line)); background:color-mix(in srgb,var(--warn) 9%,var(--surface)); }
+.app-shell[data-access="system"] .main-content .admin-log-workspace button:disabled, .admin-log-dialog button:disabled { opacity:.4; cursor:not-allowed; }
+.app-shell[data-access="system"] .main-content .admin-log-workspace table.admin-log-table { table-layout:fixed; width:100%; border-collapse:collapse; min-width:1056px; font-size:13px; }
+.app-shell[data-access="system"] .main-content .admin-log-workspace table.login-log-table { min-width:1148px; }
+.app-shell[data-access="system"] .main-content .admin-log-workspace .admin-log-table :is(th,td) { height:48px; padding:8px 12px; white-space:nowrap; font-size:13px; font-weight:400; line-height:20px; text-align:left; border:0; border-bottom:1px solid var(--line-soft); }
+.app-shell[data-access="system"] .main-content .admin-log-workspace .admin-log-table th { height:44px; font-weight:600; color:var(--muted); background:var(--surface); }
+.app-shell[data-access="system"] .main-content .admin-log-workspace .admin-log-table tbody tr:last-child td { border-bottom:1px solid var(--line-soft); }
+.app-shell[data-access="system"] .main-content .admin-log-table .log-check-column { width:40px; min-width:40px; padding-inline:9px; text-align:center; }
+.app-shell[data-access="system"] .main-content .admin-log-table input[type="checkbox"] { width:15px; height:15px; min-width:15px; min-height:15px; margin:0; vertical-align:middle; accent-color:var(--accent); }
+.app-shell[data-access="system"] .main-content .admin-log-table .link-button { min-height:28px; height:auto; padding:0; font-size:12px; font-weight:400; }
+.app-shell[data-access="system"] .main-content .admin-log-table .log-sort-button { display:inline-flex; align-items:center; gap:5px; width:auto; min-height:28px; height:auto; margin:0; padding:0; border:0; color:var(--accent); background:transparent; font:inherit; font-weight:600; white-space:nowrap; }
+.app-shell[data-access="system"] .main-content .admin-log-table button.log-cell-value { border:0; background:transparent; color:inherit; text-align:left; padding:0; min-height:20px; height:20px; font:inherit; cursor:help;
+ display:block; width:100%; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.log-cell-tooltip { position:fixed; z-index:10000; box-sizing:border-box; max-width:min(420px,calc(100vw - 24px)); max-height:160px; overflow:auto; padding:8px 10px; border:1px solid var(--line); border-radius:4px; background:var(--surface); color:var(--text); box-shadow:0 3px 12px rgb(0 0 0 / 12%); font-size:12px; line-height:1.5; overflow-wrap:anywhere; white-space:normal; }
+.app-shell[data-access="system"] .main-content .admin-log-table .log-status { display:inline-block; padding:3px 8px; border-radius:3px; font-size:12px; line-height:20px; font-weight:400; color:var(--muted); background:var(--surface-2); }
+.app-shell[data-access="system"] .main-content .admin-log-table .log-status-success { color:var(--accent); background:var(--accent-soft); }
+.app-shell[data-access="system"] .main-content .admin-log-table .log-status-failure { color:var(--bad); background:color-mix(in srgb,var(--bad) 9%,var(--surface)); }
+.app-shell[data-access="system"] .main-content .admin-log-table :is(.log-status-unconfirmed,.log-status-blocked) { color:var(--warn); background:color-mix(in srgb,var(--warn) 10%,var(--surface)); }
+.app-shell[data-access="system"] .main-content .admin-log-workspace .log-empty { height:150px; text-align:center; color:var(--muted); }
+.app-shell[data-access="system"] .main-content .admin-log-workspace .data-list-pagination { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; min-height:76px; padding:24px 0 8px; border:0; background:var(--surface); gap:12px; }
+.app-shell[data-access="system"] .main-content .log-pagination { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:10px; margin-left:auto; color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums; }
+.app-shell[data-access="system"] .main-content .log-pagination label { display:block; margin:0; }
+.app-shell[data-access="system"] .main-content .admin-log-workspace .visually-hidden { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
+.app-shell[data-access="system"] .main-content .log-pagination select { min-height:32px; height:32px; width:auto; padding:4px 8px; border:1px solid var(--line); border-radius:4px; color:var(--text); background:var(--surface); font-size:12px; }
+.app-shell[data-access="system"] .main-content .admin-log-workspace .log-page-button { min-height:26px; height:26px; min-width:26px; padding:0 8px; border:1px solid var(--line-soft); background:var(--surface-2); color:var(--text); font-size:18px; line-height:24px; border-radius:3px; }
+.app-shell[data-access="system"] .main-content .log-current-page { display:inline-grid; place-items:center; min-width:26px; height:26px; border-radius:3px; background:var(--accent); color:var(--surface); }
+.log-retention-note { color:var(--muted); font-size:11px; line-height:1.6; margin:0; }
+.log-error, .log-notice { padding:10px 12px; border-radius:4px; font-size:13px; line-height:1.6; overflow-wrap:anywhere; }
+.log-error { color:var(--bad); background:color-mix(in srgb,var(--bad) 6%,var(--surface)); }
+.log-notice { color:var(--accent); background:var(--accent-soft); }
+.log-error .link-button, .log-notice .link-button { margin-left:10px; }
+.log-muted, .log-request-id { color:var(--muted); font-size:12px; line-height:1.7; overflow-wrap:anywhere; }
+.log-loading { margin:0 0 8px; }
+/* Native centering and sizing must not inherit the large account-form shell. */
+dialog.admin-log-dialog, .app-shell dialog.admin-log-dialog { position:fixed; inset:0; box-sizing:border-box; margin:auto; padding:0; width:min(560px,calc(100vw - 32px)); max-width:calc(100vw - 32px); height:fit-content; max-height:85dvh; min-height:0; overflow:hidden; border:1px solid var(--line); border-radius:6px; background:var(--surface); color:var(--text); flex-direction:column; box-shadow:0 16px 56px rgb(0 0 0 / 18%); }
+dialog.admin-log-dialog:not([open]) { display:none; }
+dialog.admin-log-dialog[open] { display:flex; }
+.admin-log-dialog::backdrop { background:rgb(0 0 0 / 42%); }
+.admin-log-dialog > header { display:flex; flex:0 0 auto; align-items:center; justify-content:space-between; gap:16px; margin:0; padding:20px 24px 16px; border:0; }
+.admin-log-dialog > header h2 { margin:0; font-size:17px; line-height:1.5; font-weight:600; }
+.admin-log-dialog > header .log-icon-button { display:grid; place-items:center; flex:none; width:28px; height:28px; min-width:28px; min-height:28px; padding:5px; border:0; border-radius:4px; color:var(--muted); background:transparent; }
+.admin-log-dialog > header .log-icon-button svg { fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; }
+.admin-log-dialog > .dialog-scroll-body { flex:0 1 auto; min-height:0; min-width:0; padding:0 24px 12px; overflow:auto; overscroll-behavior:contain; }
+.admin-log-dialog > footer { display:flex; flex:0 0 auto; flex-wrap:wrap; justify-content:flex-end; gap:10px; margin:0; padding:16px 24px 20px; border-top:1px solid var(--line-soft); }
+.admin-log-dialog > footer button { min-height:32px; height:auto; padding:6px 16px; border-radius:4px; font-size:13px; }
+.admin-log-dialog .log-detail-fields { display:block; margin:0; padding:0; font-size:13px; line-height:1.7; }
+.admin-log-dialog .log-detail-fields > div { display:grid; grid-template-columns:125px minmax(0,1fr); align-items:start; gap:16px; padding:10px 0; border-bottom:1px solid var(--line-soft); }
+.admin-log-dialog .log-detail-fields > div:last-child { border:0; }
+.admin-log-dialog .log-detail-fields dt { color:var(--muted); font-weight:400; }
+.admin-log-dialog .log-detail-fields dd { margin:0; color:var(--text); overflow-wrap:anywhere; white-space:normal; }
+.admin-log-dialog .log-structured-changes { margin:12px 0; border:1px solid var(--line); border-radius:4px; padding:10px 12px; font-size:13px; }
+.admin-log-dialog .log-structured-changes summary { cursor:pointer; color:var(--accent); }
+.admin-log-dialog .log-change-value { white-space:pre-wrap; overflow-wrap:anywhere; }
+.admin-log-dialog .log-delete-warning { margin:0 0 14px; color:var(--bad); font-size:13px; line-height:1.7; }
+.admin-log-dialog .log-confirmation { display:grid; gap:8px; font-size:13px; }
+.admin-log-dialog .log-confirmation input { height:36px; min-height:36px; padding:6px 10px; border:1px solid var(--line); border-radius:4px; background:var(--surface); color:var(--text); font:inherit; }
+.admin-log-page :is(button,input,select,.log-cell-value):focus-visible, .admin-log-dialog :is(button,input,summary):focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+@media(max-width:820px) {
+ .app-shell[data-access="system"] .main-content .admin-log-workspace { padding:14px 12px 20px; }
+ .app-shell[data-access="system"] .main-content .log-query-form { gap:12px 16px; }
+ .app-shell[data-access="system"] .main-content .admin-log-workspace .data-list-pagination { align-items:flex-start; }
+ .log-retention-note { flex-basis:100%; }
+}
+@media(max-width:520px) {
+ .app-shell[data-access="system"] .main-content .admin-log-workspace { min-height:0; padding:12px 10px 20px; }
+ .app-shell[data-access="system"] .main-content .log-query-form > label { width:100%; display:grid; grid-template-columns:76px minmax(0,1fr); }
+ .app-shell[data-access="system"] .main-content .admin-log-workspace .log-query-form > label :is(input,select) { width:100%; }
+ .app-shell[data-access="system"] .main-content .log-query-form .log-date-range { display:grid; width:100%; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); gap:8px; }
+ .app-shell[data-access="system"] .main-content .log-date-range > span:first-child { grid-column:1/-1; }
+ .app-shell[data-access="system"] .main-content .admin-log-workspace .log-date-range input { width:100%; padding-inline:5px; font-size:12px; }
+ .app-shell[data-access="system"] .main-content .log-query-actions { margin-left:auto; }
+ .app-shell[data-access="system"] .main-content .log-toolbar-actions { gap:6px; }
+ .app-shell[data-access="system"] .main-content .admin-log-workspace .log-toolbar-actions button { padding-inline:8px; }
+ .app-shell[data-access="system"] .main-content .log-pagination { gap:7px; }
+ .admin-log-dialog > header { padding:16px 16px 12px; }
+ .admin-log-dialog > .dialog-scroll-body { padding:0 16px 12px; }
+ .admin-log-dialog > footer { padding:12px 16px 16px; }
+ .admin-log-dialog .log-detail-fields > div { grid-template-columns:96px minmax(0,1fr); gap:10px; }
+}

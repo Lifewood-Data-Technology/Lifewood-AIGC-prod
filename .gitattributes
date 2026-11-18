@@ -1,0 +1,3 @@
+# Preserve verified source bytes, including checksummed SQL migrations.
+* -text
+*.sh text eol=lf

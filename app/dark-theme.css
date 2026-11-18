@@ -1,0 +1,71 @@
+/* Shared controls and charts use semantic tokens, including portals inside dialogs. */
+.app-shell {
+  --chart-core-1: #046241; --chart-core-2: #2f8d68; --chart-core-3: #ffb347; --chart-core-4: #e65d47;
+  --progress-materials: #8b7660; --progress-planned: #8a969f; --progress-production: #3278ab;
+  --progress-review: #d59a20; --progress-revision: #bf5144; --progress-approved: #087653;
+  --progress-paused: #8a72a5; --progress-other: #525f67; --progress-over-half: #b47e13;
+}
+.app-shell[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #101915; --surface: #19251f; --surface-2: #213129; --sunk: #111d17;
+  --text: #edf5ef; --muted: #bbc9c0; --faint: #a0b2a6; --line: #657c6f;
+  --accent: #8ed5b1; --accent-2: #a9e6c6; --accent-soft: #263e31;
+  --ok: #85dda6; --ok-soft: #203c2c; --warn: #ffd086; --warn-soft: #44361e;
+  --bad: #ffb3a5; --bad-soft: #432b29;
+  --chart-core-1: #82d8ad; --chart-core-2: #5dbf99; --chart-core-3: #ffbd69; --chart-core-4: #ff8d78;
+  --progress-materials: #c7ad91; --progress-planned: #aebcc5; --progress-production: #65b2e4;
+  --progress-review: #f1bd55; --progress-revision: #f08478; --progress-approved: #85dda6;
+  --progress-paused: #bba3d3; --progress-other: #a0b2a6; --progress-over-half: #e7aa35;
+  background: var(--bg); color: var(--text);
+}
+.app-shell[data-theme="dark"] footer { background: var(--surface-2); color: var(--muted); border-color: var(--line); }
+.app-shell[data-theme="dark"] .sidebar .nav-item.active { background: var(--accent-soft); color: var(--accent-2); box-shadow: inset 3px 0 0 var(--accent); }
+.app-shell[data-theme="dark"] .sidebar .nav-item.active b { background: var(--surface); color: var(--accent-2); }
+.app-shell[data-theme="dark"] dialog::backdrop,
+.app-shell[data-theme="dark"] .modal-backdrop { background: rgb(0 0 0 / 65%); }
+.app-shell[data-theme="dark"] :is(.topbar,.work-panel > header,.panel > header,.explorer-commandbar,.explorer-statusbar,.workflow-tabs,.delivery-tabs,.task-tabs,.segmented,.request-toolbar,.crm-toolbar,.project-filters,.asset-library-toolbar,.filter-group,.administrator-identity,.permission-role-card,.permission-confirmation) { background: var(--surface-2); color: var(--text); border-color: var(--line); }
+.app-shell[data-theme="dark"] :is(.page-search,.explorer-search,.select-trigger,input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),select,textarea) { background: var(--sunk); color: var(--text); border-color: var(--line); }
+.app-shell[data-theme="dark"] :is(.page-search,.team-search,.global-search,.inline-search,.select-search,.explorer-search) input { background: transparent !important; border-color: transparent; }
+.app-shell[data-theme="dark"] :is(input,textarea)::placeholder { color: var(--faint); opacity: 1; }
+.app-shell[data-theme="dark"] :is(.secondary-button,button.secondary-button,.row-menu-trigger,.row-action,.table-actions button,.link-button,.toolbar-button) { background: transparent; color: var(--accent); border-color: var(--line); }
+.app-shell[data-theme="dark"] :is(.secondary-button,button.secondary-button,.row-menu-trigger,.row-action,.table-actions button,.link-button,.toolbar-button):hover { background: var(--accent-soft); color: var(--accent-2); }
+.app-shell[data-theme="dark"] :is(.primary-button,button.primary-button,.command-primary) { background: var(--accent); border-color: var(--accent); color: #10281b; box-shadow: none; }
+.app-shell[data-theme="dark"] :is(.primary-button,button.primary-button,.command-primary):hover { background: var(--accent-2); color: #10281b; }
+.app-shell[data-theme="dark"] :is(.workflow-tabs,.delivery-tabs,.task-tabs,.segmented) button.active { background: var(--accent); color: #10281b; border-color: var(--accent); }
+.app-shell[data-theme="dark"] :is(.eyebrow,.page-heading .eyebrow,.work-table th,.filter-group-heading strong) { color: var(--accent); }
+.app-shell[data-theme="dark"] .page-heading .eyebrow::before { background: var(--accent); }
+.app-shell[data-theme="dark"] :is(.filter-group-heading,.work-table td,.work-table th) { border-color: var(--line); }
+.app-shell[data-theme="dark"] :is(.work-table th,.explorer-table th) { background: var(--surface-2); color: var(--accent); border-color: var(--line); }
+.app-shell[data-theme="dark"] :is(.work-table tbody tr:hover,.explorer-table tbody tr:hover) { background: var(--surface-2); }
+.app-shell[data-theme="dark"] .explorer-table tbody tr.selected-row { background: var(--accent-soft); }
+.app-shell[data-theme="dark"] :is(.language-button,.menu-button,.icon-button):hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-2); }
+.app-shell[data-theme="dark"] .panel-body > .workflow-tabs.list-status-tabs button > span,
+.app-shell[data-theme="dark"] .panel-body > .list-status-tabs button b,
+.app-shell[data-theme="dark"] .production-task-shell > .list-status-tabs button b { background: var(--sunk); color: var(--muted); }
+.app-shell[data-theme="dark"] .panel-body > .workflow-tabs.list-status-tabs button.active > span,
+.app-shell[data-theme="dark"] .panel-body > .list-status-tabs button.active b,
+.app-shell[data-theme="dark"] .production-task-shell > .list-status-tabs button.active b { background: var(--accent-soft); color: var(--accent-2); }
+.app-shell[data-theme="dark"] .file-kind { background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent); }
+.app-shell[data-theme="dark"] .file-kind.image { background: color-mix(in srgb, var(--chart-core-3) 15%, var(--surface)); color: var(--chart-core-3); }
+.app-shell[data-theme="dark"] .file-kind.audio { background: color-mix(in srgb, var(--progress-paused) 16%, var(--surface)); color: var(--progress-paused); }
+.app-shell[data-theme="dark"] .file-preview { border: 1px solid var(--line); background: var(--surface-2); color: var(--accent); }
+.app-shell[data-theme="dark"] :is(.finished-work-delete,.finished-work-readonly) { border-color: var(--line); background: color-mix(in srgb, var(--surface) 92%, transparent); }
+.app-shell[data-theme="dark"] .finished-work-delete { color: var(--bad); }
+.app-shell[data-theme="dark"] .finished-work-delete:hover { border-color: var(--bad); background: var(--bad-soft); }
+.app-shell[data-theme="dark"] .finished-work-readonly { color: var(--muted); }
+.app-shell[data-theme="dark"] :is(.danger,.secondary-button.danger,button.secondary-button.danger,.floating-row-menu button.danger) { color: var(--bad); }
+.app-shell[data-theme="dark"] :is(.required-mark,.field-error) { color: var(--bad); }
+.app-shell[data-theme="dark"] .form-error-summary { border-color: color-mix(in srgb, var(--bad) 50%, var(--line)); background: var(--bad-soft); color: var(--bad); }
+.app-shell[data-theme="dark"] .modal-grid :is(.field-invalid input,.field-invalid select) { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 8%, var(--surface)); }
+.app-shell[data-theme="dark"] .win-file-icon { border-color: var(--line); background: var(--surface-2); color: var(--accent); box-shadow: 0 2px 5px rgb(0 0 0 / 28%); }
+.app-shell[data-theme="dark"] .win-file-icon::before { background: var(--surface); }
+.app-shell[data-theme="dark"] .pc-tree-icon { background: color-mix(in srgb, var(--progress-production) 14%, var(--surface)); color: var(--progress-production); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--progress-production) 32%, transparent); }
+.app-shell[data-theme="dark"] .account-row-actions button:disabled { color: var(--faint); }
+.app-shell[data-theme="dark"] :is(.quality-queue-hero > button,.project-video-task-heading > div:first-child > span,.automatic-status-box > span,.quality-task-rail > header > b,.asset-upload-step b,.asset-create-upload > header > b,.explorer-drop-overlay > span) { color: #10281b; }
+.app-shell[data-theme="dark"] :is(.revision-dashboard-alert > span:first-child,.account-operation-error > span,.account-modal-error > span,.rejection-detail > div > span,.editor-revision-workspace > header > div > span) { color: #321410; }
+.app-shell[data-theme="dark"] :is(.account-access-dialog,.account-access-dialog-body,.account-permission-editor label,.floating-row-menu) { background: var(--surface); color: var(--text); border-color: var(--line); }
+.app-shell[data-theme="dark"] :is(.account-access-dialog header,.account-access-dialog footer) { background: var(--surface-2); color: var(--text); border-color: var(--line); }
+.app-shell[data-theme="dark"] :is(.permission-role-card.selected,.tree-node.selected,.explorer-tree-row.active) { background: var(--accent-soft); color: var(--text); }
+.app-shell[data-theme="dark"] :is(button,input,select,textarea,a):focus-visible { outline: 2px solid var(--accent-2); outline-offset: 3px; }
+/* Backup explanations must not inherit the legacy light fallback background. */
+.app-shell[data-theme="dark"] :is(.backup-notice,.backup-confirm) { background: var(--surface-2); color: var(--text); border-color: var(--line); }

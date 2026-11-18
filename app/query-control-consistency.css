@@ -1,0 +1,75 @@
+/* Shared query-only contract, loaded after role styles. Edit forms are unaffected.
+   Important declarations neutralize legacy brand rules and role-specific focus rings. */
+.app-shell {
+  --query-focus: #858d94;
+  --query-control-height: 44px;
+}
+.app-shell[data-theme="dark"] { --query-focus: #a3abb2; }
+.app-shell :is(.filter-group,.dashboard-filters,.pm-filters,.admin-filter-field,.query-inline-field,.editor-task-filters) :is(input,.select-trigger,.editor-select-trigger,.editor-status-trigger),
+.app-shell :is(.admin-filter-field,.query-inline-field) > span,
+.app-shell :is(.filter-group,.dashboard-filters,.pm-filters) label > span:not(:has(svg)) {
+  font-family:inherit !important; font-size:var(--query-font-size,15px) !important; font-weight:400 !important; line-height:1.4 !important;
+}
+.app-shell :is(.filter-group,.dashboard-filters,.pm-filters) input[type="date"]::-webkit-datetime-edit { font:inherit; padding:0; }
+.app-shell :is(.filter-group label:has(> .select-control),.filter-group label:has(> input[type="date"]),.dashboard-filters .date-control,.pm-date,.admin-filter-field,.query-inline-field,.page-search,.team-search,.editor-search-control) {
+  box-sizing:border-box; height:var(--query-control-height) !important; min-height:var(--query-control-height) !important; align-items:center;
+}
+.app-shell :is(.filter-group,.dashboard-filters,.pm-filters,.admin-filter-field,.query-inline-field) .select-control { display:flex; align-items:center; min-width:0; }
+.app-shell :is(.filter-group,.dashboard-filters,.pm-filters,.admin-filter-field,.query-inline-field) :is(input,.select-trigger) {
+  box-sizing:border-box; min-height:0 !important; height:calc(var(--query-control-height) - 2px) !important;
+}
+.app-shell :is(.page-search,.team-search,.search-control,.editor-search-control,.asset-library-toolbar > label) input {
+  background:transparent !important; border:0 !important; box-shadow:none !important;
+}
+/* A single neutral outer indicator instead of nested green outlines. */
+.app-shell :is(.filter-group,.dashboard-filters,.pm-filters,.editor-task-filters,.admin-filter-field,.query-inline-field) :is(input,select,.select-trigger,.editor-select-trigger,.editor-status-trigger):is(:focus,:focus-visible,[aria-expanded="true"]) {
+  outline:none !important; box-shadow:none !important; border-color:var(--query-focus) !important;
+}
+.app-shell :is(.filter-group label:has(input),.filter-group label:has(.select-control),.dashboard-filters label:has(input),.dashboard-filters label:has(.select-control),.pm-filters label,.admin-filter-field,.query-inline-field,.team-search,.page-search,.editor-search-control,.editor-filter-field,.editor-status-filter):focus-within {
+  outline:none !important; outline-offset:0 !important; box-shadow:none !important; border-color:var(--query-focus) !important;
+}
+/* The label owns focus for nested search wrappers. */
+.app-shell .filter-group label:focus-within .team-search { outline:none !important; box-shadow:none !important; }
+
+/* Reset actions use one role-independent outlined button, including PM actions. */
+.app-shell button.query-reset-button {
+  min-height:44px !important; padding:8px 14px !important; border:1px solid var(--line) !important;
+  border-radius:10px !important; background:var(--surface) !important; color:var(--accent) !important;
+  font-family:inherit !important; font-size:15px !important; font-weight:600 !important;
+  line-height:1.4 !important; text-decoration:none !important; box-shadow:none !important; white-space:nowrap;
+}
+.app-shell button.query-reset-button:hover { border-color:var(--query-focus) !important; background:var(--surface-2) !important; }
+.app-shell button.query-reset-button:focus-visible { outline:none !important; border-color:var(--query-focus) !important; }
+
+/* Standalone project controls own their border; only nested inputs are 42px. */
+.app-shell :is(.dashboard-filters,.pm-filters) label:not(:has(> span:not(.select-control))) > .select-control > .select-trigger {
+  height:var(--query-control-height) !important;
+}
+.app-shell .dashboard-filters .search-control {
+  box-sizing:border-box; height:var(--query-control-height); min-height:var(--query-control-height);
+  border:1px solid var(--line); border-radius:10px; background:var(--surface-2);
+}
+
+/* Editor menu controls follow the shared menu contract; task dialogs are unchanged. */
+.app-shell .editor-task-list .editor-task-filters .editor-select-trigger {
+  height:calc(var(--query-control-height) - 2px) !important; min-height:0 !important;
+  border:0 !important; background:transparent;
+}
+.app-shell .editor-task-list .editor-search-control { background:var(--surface-2); border-radius:10px; }
+.app-shell .editor-task-list .editor-task-filters::before { display:none; }
+.app-shell .editor-task-list .editor-filter-actions button { min-height:44px; font-size:15px; border-radius:10px; }
+.app-shell .editor-task-list :is(.editor-filter-field,.editor-status-filter,.editor-task-search) > span:first-child {
+  font-family:inherit; font-size:15px; font-weight:400;
+}
+.editor-select-popup.select-popup > button { font-family:var(--font-ui); font-size:15px; }
+.app-shell .editor-task-list .editor-section > header { background:var(--surface); }
+.app-shell .editor-task-list table thead { background:var(--surface-2); }
+
+.app-shell .editor-task-filters :is(.editor-filter-field,.editor-status-filter) {
+  box-sizing:border-box; height:44px; min-height:44px;
+}
+.app-shell .editor-task-list .editor-task-search > span:first-child {
+  position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%);
+}
+/* Menu text inherits the application font; production detail workspaces keep their typography. */
+.app-shell .editor-work-area.editor-task-list { font-family:inherit; line-height:inherit; }

@@ -1,0 +1,28 @@
+[Unit]
+Description=Lifewood AIGC public application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lifewood
+Group=lifewood
+WorkingDirectory=/opt/lifewood/aigc/current
+# The application parses this private dotenv file, including quoted PEM values.
+Environment=LIFEWOOD_ENV_FILE=/etc/lifewood/aigc.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node dist-mysql/launcher/server.mjs
+Restart=on-failure
+RestartSec=5s
+KillSignal=SIGTERM
+TimeoutStopSec=300s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

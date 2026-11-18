@@ -1,0 +1,64 @@
+.permission-page-note { color: var(--muted); font-size: .9375rem; line-height: 1.7; margin-bottom: 1rem; }
+.access-meter i { min-width: 0; }
+.permission-role-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+.permission-role-card { padding: 1.25rem; text-align: left; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 1rem; cursor: pointer; }
+.permission-role-card:hover, .permission-role-card.selected { border-color: var(--accent); background: var(--accent-soft); }
+.permission-role-card > span { display: flex; gap: .75rem; justify-content: space-between; align-items: center; font-size: 1rem; }
+.permission-role-card b { font-size: .875rem; color: var(--accent); white-space: nowrap; }
+.permission-role-card p { margin: .75rem 0; color: var(--muted); font-size: .9375rem; line-height: 1.6; }
+.permission-role-card small { font-size: .875rem; color: var(--accent); }
+.permission-account-section { padding: 1.5rem; background: var(--surface); border: 1px solid var(--line); border-radius: 1rem; min-width: 0; }
+.permission-account-table { min-width: 42rem; }
+.account-permission-dialog { width: min(44rem, calc(100vw - 2rem)); }
+.account-permission-dialog > footer { display: flex; flex-shrink: 0; justify-content: flex-end; flex-wrap: wrap; gap: .75rem; padding: 1rem 1.5rem; border-top: 1px solid var(--line); }
+.account-permission-editor { max-height: none; }
+.account-permission-editor label { padding: .8rem 0; }
+.account-permission-editor label span strong { font-size: .9375rem; }
+.account-permission-editor label span small { font-size: .875rem; color: var(--muted); margin-top: .2rem; }
+.account-permission-editor input { width: 1.25rem; height: 1.25rem; flex-shrink: 0; }
+.permission-confirmation h3 { font-size: 1rem; margin: 1rem 0; }
+.permission-confirmation ul { padding: 0; list-style: none; }
+.permission-confirmation li { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .5rem; padding: .85rem 0; border-bottom: 1px solid var(--line); font-size: .9375rem; }
+.permission-confirmation strong { color: var(--accent); }
+.account-permissions-panel button:focus-visible, .account-permission-dialog input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 900px) { .permission-role-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .permission-role-grid { grid-template-columns: 1fr; } .permission-account-section { padding: 1rem; } .permission-role-card > span { flex-wrap: wrap; } }
+
+/* Permission decisions: scope first, changes explicit, actions always reachable. */
+.permission-list-summary { display: grid; gap: .35rem; min-width: 12rem; max-width: 25rem; white-space: normal; line-height: 1.55; }
+.permission-list-summary > span, .permission-list-summary > small { color: var(--muted); font-size: .8125rem; }
+.permission-list-summary > .permission-list-difference { color: var(--accent); font-weight: 600; }
+.account-permission-dialog .permission-role-context { border-left: 3px solid var(--accent); padding: .15rem 0 .15rem 1rem; margin-bottom: 1.5rem; }
+.account-permission-dialog h3 { font-size: .9375rem; margin: 0; }
+.account-permission-dialog .permission-role-context p { margin: .5rem 0 0; }
+.permission-settings-heading { display: flex; justify-content: space-between; align-items: center; gap: .75rem; margin-bottom: .5rem; }
+.permission-settings-heading > span { font-size: .8125rem; color: var(--muted); }
+.account-permission-editor .permission-setting { display: flex; align-items: flex-start; gap: 1rem; padding: 1rem .75rem; border-bottom: 1px solid var(--line); border-left: 3px solid transparent; }
+.account-permission-editor .permission-setting.is-changed { border-left-color: var(--accent); }
+.permission-setting-copy { display: grid; gap: .4rem; min-width: 0; flex: 1; }
+.permission-setting-title { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem .6rem; }
+.permission-setting-title > strong { color: var(--text); }
+.permission-scope-badge, .permission-change-badge { display: inline-block; border-radius: .3rem; padding: .1rem .4rem; font-size: .75rem; font-weight: 600; }
+.permission-scope-badge { background: color-mix(in srgb, var(--warn) 14%, var(--surface)); color: var(--warn); }
+.permission-change-badge { background: var(--accent-soft); color: var(--accent); }
+.permission-setting-description, .permission-setting-impact, .permission-setting-default { font-size: .8125rem; line-height: 1.65; color: var(--muted); }
+.permission-setting-default { font-size: .75rem; }
+.permission-setting-toggle { display: grid; justify-items: center; gap: .35rem; min-width: 3rem; font-size: .75rem; color: var(--muted); padding-top: .1rem; }
+.permission-setting-toggle input { margin: 0; accent-color: var(--accent); cursor: pointer; }
+.permission-setting-toggle input:disabled { cursor: default; }
+.account-permission-dialog .permission-confirmation { padding: 0; background: transparent; }
+.permission-confirmation li { display: block; }
+.permission-change-title { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem 1rem; }
+.permission-confirmation li p { margin: .5rem 0 0; }
+.account-permission-dialog > footer > .account-access-error { flex-basis: 100%; margin: 0; color: var(--bad); }
+@media (max-width: 600px) {
+  .account-permission-editor .permission-setting { padding: 1rem .25rem 1rem .5rem; gap: .5rem; }
+  .permission-settings-heading { align-items: flex-start; flex-wrap: wrap; }
+  .account-permission-dialog > footer { padding: .8rem 1rem; }
+}
+.permission-explanation { font-size: .8125rem; line-height: 1.65; }
+.permission-explanation summary { cursor: pointer; color: var(--accent); width: fit-content; }
+.permission-explanation[open] { display: grid; gap: .35rem; }
+.permission-explanation > span { display: block; margin-top: .35rem; }
+.permission-setting-title > strong { font-size: .9375rem; }
+.permission-explanation summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }

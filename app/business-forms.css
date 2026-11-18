@@ -1,0 +1,116 @@
+/* Shared business-form geometry. No visibility, permission or submit rules.
+   Scope individual controls so checkboxes, upload targets and media tools keep
+   their specialised interactions and hit areas. */
+.app-shell {
+  --form-field-gap: .5rem;
+  --form-row-gap: 1.25rem;
+  --form-control-height: 2.75rem;
+}
+.app-shell:not([data-access="system"]) :is(.modal-grid, .pm-form-grid, .pm-form-fields, .video-plan-fields, .editor-report-fields) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--form-row-gap);
+  min-width: 0;
+}
+.app-shell:not([data-access="system"]) :is(.modal-grid, .pm-form-grid) > :is(.full-field, .pm-wide),
+.app-shell .editor-report-fields > :is(.editor-report-progress, p) {
+  grid-column: 1 / -1;
+}
+.app-shell:not([data-access="system"]) :is(
+  .modal-grid,
+  .pm-modal form,
+  .editor-report-fields,
+  .quality-issue-editor,
+  .sales-upload-dialog .account-access-dialog-body,
+  .production-workspace-modal fieldset
+) label:has(> :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]), select, .select-control, textarea)):not(.query-inline-field) {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--form-field-gap);
+  min-width: 0;
+  margin-block: 0;
+}
+.app-shell:not([data-access="system"]) :is(.modal-grid, .pm-modal form, .editor-report-fields, .quality-issue-editor, .sales-upload-dialog, .production-workspace-modal fieldset) label > :is(
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]),
+  select, .select-control, textarea
+) {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  margin-block: 0;
+}
+.app-shell:not([data-access="system"]) :is(.modal-grid, .pm-modal form, .editor-report-fields, .quality-issue-editor, .sales-upload-dialog, .production-workspace-modal fieldset) label > :is(
+  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]),
+  select
+) {
+  min-height: var(--form-control-height);
+  height: var(--form-control-height);
+  padding-block: .5rem;
+}
+.app-shell:not([data-access="system"]) :is(.modal-grid, .pm-modal form, .quality-issue-editor, .production-workspace-modal fieldset) label:has(> textarea) {
+  grid-column: 1 / -1;
+}
+.app-shell:not([data-access="system"]) :is(.modal-grid, .pm-modal form, .quality-issue-editor, .production-workspace-modal fieldset) label > textarea {
+  min-height: 7rem;
+  resize: vertical;
+}
+.app-shell .quality-issue-editor > div:has(> label > .select-control) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: var(--form-row-gap);
+}
+.app-shell .production-workspace-modal fieldset > label + label,
+.app-shell .quality-issue-editor > label {
+  margin-top: var(--form-row-gap);
+}
+/* Do not reposition navigation/back/step actions in specialised dialog footers. */
+.app-shell:not([data-access="system"]) :is(.modal-card > footer, .modal-card [data-dialog-footer], .pm-modal-foot) {
+  gap: .75rem;
+  flex-wrap: wrap;
+}
+
+/* Native filters use the same label/value frame as SelectControl filters. */
+.app-shell .query-inline-field > :is(select, input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"])) {
+  flex: 1 1 0;
+  width: 100%;
+  min-width: 0;
+  min-height: calc(var(--form-control-height) - 2px);
+  height: calc(var(--form-control-height) - 2px);
+  margin: 0;
+  border: 0;
+  border-radius: .25rem;
+  padding-block: .35rem;
+  padding-left: 0;
+  background-color: transparent !important;
+  box-shadow: none;
+}
+.app-shell .editor-material-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));
+  gap: .75rem;
+  align-items: end;
+}
+.app-shell .production-search-toolbar[data-dialog-toolbar] > label.query-inline-field {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: .25rem;
+}
+@media (max-width: 700px) {
+  .app-shell:not([data-access="system"]) :is(.modal-grid, .pm-form-grid, .pm-form-fields, .video-plan-fields, .editor-report-fields),
+  .app-shell .quality-issue-editor > div:has(> label > .select-control),
+  .app-shell .editor-material-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.app-shell .editor-material-filters > .editor-material-search { display: grid; min-width: 0; gap: .5rem; }
+.app-shell .editor-material-search > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.app-shell .editor-material-filters .editor-material-search input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]) { width: 100%; min-width: 0; height: var(--form-control-height); min-height: var(--form-control-height); }
+
+.app-shell:not([data-access="system"]) .pm-form-fields > :is(.pm-form-grid, fieldset, .pm-info, .pm-danger) { grid-column: 1 / -1; }
+.app-shell:not([data-access="system"]) .pm-modal form > label + label { margin-top: var(--form-row-gap); }
+
+.app-shell:not([data-access="system"]) .pm-form-fields:not([hidden]) { display: grid; }

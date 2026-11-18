@@ -1,0 +1,51 @@
+.account-management-views { display: flex; flex-wrap: wrap; gap: .75rem; margin: 0 0 1.25rem; }
+.account-access-panel { background: var(--surface); border: 1px solid var(--line); border-radius: 1rem; padding: 1.5rem; min-width: 0; }
+.account-access-heading { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.account-access-heading h2 { font-size: 1.25rem; margin: 0; }
+.account-access-heading p, .account-access-note { color: var(--muted); font-size: .875rem; line-height: 1.7; }
+.account-access-error { color: var(--bad); background: var(--bad-soft); border-radius: .5rem; padding: .8rem 1rem; }
+.account-presence-counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; margin: 1.25rem 0; }
+.account-presence-counts button { display: flex; justify-content: space-between; align-items: center; gap: .75rem; text-align: left; padding: 1rem; border: 1px solid var(--line); border-radius: .75rem; background: var(--surface-2); cursor: pointer; font-size: .875rem; }
+.account-presence-counts button.selected { border-color: var(--accent); background: var(--accent-soft); }
+.account-presence-counts strong { font-size: 1.5rem; color: var(--accent); }
+.account-access-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; margin: 1.25rem 0; }
+.account-access-filters .page-search { flex: 1 1 18rem; max-width: 32rem; }
+.account-access-filters > label:not(.page-search) { display: grid; gap: .4rem; min-width: 12rem; font-size: .875rem; }
+.account-access-table { min-width: 54rem; }
+.account-access-table small { display: block; color: var(--muted); font-size: .875rem; overflow-wrap: anywhere; }
+.account-presence-badge { display: inline-flex; align-items: center; justify-self: start; gap: .45rem; padding: .3rem .65rem; border: 1px solid transparent; border-radius: 999px; font-size: .875rem; font-weight: 600; line-height: 1.4; white-space: nowrap; }
+.account-presence-badge i { width: .5rem; height: .5rem; border-radius: 50%; background: currentColor; }
+.account-presence-badge.online { color: var(--ok); background: var(--ok-soft); border-color: color-mix(in srgb, var(--ok) 25%, transparent); }
+.account-presence-badge.offline { color: var(--presence-offline); background: var(--presence-offline-bg); border-color: var(--presence-offline-border); }
+.account-presence-badge.away, .account-presence-badge.unknown { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, var(--surface)); border-color: color-mix(in srgb, var(--warn) 25%, transparent); }
+.account-presence-badge.unknown i { background: transparent; border: 1px solid currentColor; }
+.account-access-pagination { display: flex; justify-content: flex-end; align-items: center; gap: .75rem; flex-wrap: wrap; margin-top: 1rem; font-size: .875rem; }
+.account-access-pagination > span { margin-right: auto; color: var(--muted); }
+.account-access-dialog { position: fixed; inset: 0; margin: auto; color: var(--text); background: var(--surface); width: min(70rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); padding: 0; border: 1px solid var(--line); border-radius: 1rem; }
+.account-access-dialog::backdrop { background: color-mix(in srgb, var(--text) 45%, transparent); }
+.account-access-dialog[open] { display: flex; flex-direction: column; }
+.account-access-dialog > header { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--line); }
+.account-access-dialog h2 { font-size: 1.25rem; margin: 0; }
+.account-access-dialog p { font-size: .875rem; color: var(--muted); line-height: 1.7; }
+.account-access-dialog header p { margin: .35rem 0 0; overflow-wrap: anywhere; }
+.account-access-dialog-body { overflow-y: auto; min-height: 0; padding: 1.5rem; }
+.account-access-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+.account-access-detail-grid > div { display: grid; gap: .4rem; background: var(--surface-2); border: 1px solid var(--line); border-radius: .6rem; padding: 1rem; font-size: .875rem; overflow-wrap: anywhere; }
+.account-access-detail-grid > div > span:first-child { color: var(--muted); }
+.account-access-dialog .work-table { min-width: 42rem; }
+.account-access-panel button:focus-visible, .account-access-dialog button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 650px) {
+  .account-access-panel { padding: 1rem; }
+  .account-presence-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .account-access-detail-grid { grid-template-columns: 1fr; }
+  .account-access-dialog > header, .account-access-dialog-body { padding: 1rem; }
+}
+.login-details-refresh { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .75rem; margin-bottom: 1rem; font-size: .8125rem; color: var(--muted); }
+.account-access-dialog > .login-detail-actions { display: flex; gap: .75rem; flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 600px) { .account-access-dialog > .login-detail-actions > button { flex: 1 1 auto; } }
+.login-connection-details { margin: 1rem 0; font-size: .875rem; }
+.login-connection-details > summary { cursor: pointer; color: var(--accent); padding: .5rem 0; }
+.login-connection-details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.login-connection-details[open] > .account-access-detail-grid { margin-top: .5rem; }
+.account-access-dialog .admin-session-release { padding: 1.5rem; }
+.account-access-dialog .admin-session-release textarea { width: 100%; box-sizing: border-box; min-height: 100px; }

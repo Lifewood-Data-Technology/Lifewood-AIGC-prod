@@ -1,0 +1,93 @@
+/* Role-specific query arrangements; business controls and workspaces retain their behavior. */
+.app-shell .pm-project-list .pm-list-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 10px;
+}
+.app-shell .pm-project-list .pm-list-filters > .data-list-field {
+  min-width: 0;
+  width: 100%;
+  margin: 0;
+}
+.app-shell .pm-project-list .pm-list-filters .select-control { min-width: 0; }
+.app-shell .pm-project-list .data-list-summary-content { flex: 1 0 180px; }
+.app-shell .pm-project-list .pm-project-table td:nth-child(2) { min-width: 180px; max-width: 300px; }
+.app-shell .pm-project-list .pm-project-table td:nth-child(3) { min-width: 160px; max-width: 240px; }
+.app-shell .pm-project-list :is(.pm-project-name, .pm-customer-name) {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  max-width: 300px;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  line-height: 1.5;
+}
+.app-shell .pm-project-list .pm-customer-name { max-width: 240px; }
+
+.app-shell .editor-data-list .editor-query-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  min-width: 0;
+}
+.app-shell .editor-data-list .editor-task-filters .editor-query-row > .editor-task-search {
+  display: flex;
+  flex: 0 1 320px;
+  width: 320px;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+.app-shell .editor-data-list .editor-query-row .editor-search-control { width: 100%; flex: 1; }
+.app-shell .editor-data-list .editor-query-row .editor-inline-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin: 0 0 0 auto;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.app-shell .editor-data-list .editor-query-row .editor-inline-check input { margin: 0; flex: none; }
+.app-shell .editor-data-list .editor-task-filters > .editor-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: center;
+}
+.app-shell .editor-data-list .editor-task-filters > .editor-filter-grid > :is(label, div) {
+  min-width: 0;
+  width: 100%;
+  margin: 0;
+  border-radius: 6px;
+}
+.app-shell .editor-data-list .editor-task-filters .editor-status-filter .editor-status-trigger {
+  width: auto;
+  flex: 1;
+  min-width: 0;
+}
+.app-shell .editor-data-list .editor-task-row-actions {
+  width: 260px;
+  max-width: 100%;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+}
+.app-shell .editor-data-list .production-task-table td:nth-child(2) { min-width: 160px; max-width: 240px; overflow-wrap: anywhere; }
+
+.app-shell .team-data-list .team-role-filter { flex: 0 1 230px; min-width: 200px; }
+.app-shell .team-data-list .team-project-filter { flex: 0 1 360px; min-width: 290px; }
+.app-shell .team-data-list .data-list-field .select-control { min-width: 0; }
+
+@media (max-width: 600px) {
+  .app-shell .pm-project-list .pm-list-filters { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .pm-project-list .data-list-result-actions > button { flex: 1 1 calc(50% - 8px); }
+  .app-shell .editor-data-list .editor-task-filters .editor-query-row > .editor-task-search { flex-basis: 100%; width: 100%; }
+  .app-shell .editor-data-list .editor-query-row .editor-inline-check { margin-left: 0; }
+  .app-shell .editor-data-list .editor-task-filters > .editor-filter-grid { grid-template-columns: minmax(0, 1fr); }
+  .app-shell .team-data-list :is(.team-role-filter, .team-project-filter) { flex-basis: 100%; width: 100%; min-width: 0; }
+}

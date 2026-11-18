@@ -1,0 +1,44 @@
+# HTTP-context include (for example sites-enabled). Review existing listeners before installing.
+# Single same-host TLS proxy only. No inherited real_ip trust/CDN chain is assumed.
+log_format lifewood_public '$remote_addr [$time_local] "$request_method $uri" $status $body_bytes_sent';
+
+server {
+    listen 80;
+    server_name www.aigc.lifewood.com;
+    return 308 https://www.aigc.lifewood.com$request_uri;
+}
+server {
+    listen 443 ssl;
+    server_name www.aigc.lifewood.com;
+    # Replace with the existing operator-managed certificate paths.
+    ssl_certificate /etc/letsencrypt/live/www.aigc.lifewood.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/www.aigc.lifewood.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    if ($host != www.aigc.lifewood.com) { return 421; }
+    access_log /var/log/nginx/aigc-access.log lifewood_public;
+    error_log /var/log/nginx/aigc-error.log warn;
+    client_max_body_size 16m;
+    location / {
+        # No URI suffix/rewrite: keep signed paths and query strings unchanged.
+        proxy_pass http://127.0.0.1:3002;
+        proxy_http_version 1.1;
+        proxy_set_header Host www.aigc.lifewood.com;
+        proxy_set_header Connection "";
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        include /etc/lifewood/aigc-proxy-secret.conf;
+        proxy_set_header Forwarded "";
+        proxy_set_header X-Forwarded-Host "";
+        proxy_set_header X-Forwarded-Port "";
+        proxy_set_header X-Forwarded-Server "";
+        proxy_set_header X-Real-IP "";
+        proxy_set_header CF-Connecting-IP "";
+        proxy_set_header True-Client-IP "";
+        proxy_cache off;
+        proxy_buffering off;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 300s;
+        proxy_next_upstream off;
+    }
+}

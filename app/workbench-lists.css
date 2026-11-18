@@ -1,0 +1,104 @@
+/* Opted-in record lists only; forms and specialised workspaces keep their layouts. */
+.app-shell .unified-list-layout{min-width:0;display:grid;gap:16px}
+.app-shell .unified-list-layout>.list-status-tabs{display:flex;flex-wrap:wrap;align-items:center;gap:8px 22px;margin:0;padding:0;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;box-shadow:none}
+.app-shell .unified-list-layout>.list-status-tabs button{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:8px 2px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--muted);font-size:14px;white-space:nowrap;box-shadow:none}
+.app-shell .unified-list-layout>.list-status-tabs button.active{border-bottom-color:var(--accent);background:transparent;color:var(--accent)}
+.app-shell .unified-list-layout>.list-status-tabs button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app-shell .unified-list-layout>.list-status-tabs button b{min-width:24px;padding:2px 7px;border-radius:99px;background:var(--surface-2);font-size:12px;font-variant-numeric:tabular-nums}
+.app-shell .workbench-data-list .filter-group-heading{display:none}
+.app-shell .workbench-data-list .data-list-filters>div{width:100%}
+.app-shell .workbench-data-list :is(.crm-toolbar,.notification-toolbar,.recycle-toolbar,.list-filter-toolbar){border:0;background:transparent;box-shadow:none;margin:0;padding:0;border-radius:0}
+.app-shell .workbench-data-list :is(.crm-toolbar-row,.crm-filters,.notification-filters,.recycle-filters){display:flex;flex-wrap:wrap;align-items:center;gap:10px;grid-template-columns:none}
+.app-shell .workbench-data-list .crm-filters{margin-top:10px;padding-top:0;border:0}
+.app-shell .workbench-data-list :is(.crm-toolbar-row,.notification-filters,.recycle-filters)>.page-search{flex:0 1 320px;width:320px;max-width:100%}
+.app-shell .workbench-data-list :is(.crm-filters,.crm-toolbar-row,.notification-filters,.recycle-filters)>label:not(.page-search){flex:0 1 200px;min-width:170px;max-width:100%;height:44px;display:flex;align-items:center;gap:8px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
+.app-shell .workbench-data-list :is(.crm-filters,.crm-toolbar-row,.notification-filters,.recycle-filters)>label:not(.page-search)>span{font-size:13px;white-space:nowrap;color:var(--muted)}
+.app-shell .workbench-data-list :is(.crm-filters,.crm-toolbar-row,.notification-filters,.recycle-filters)>label:not(.page-search) :is(input,.select-control){flex:1;min-width:0;width:auto}
+.app-shell .workbench-data-list :is(.crm-filters,.crm-toolbar-row,.notification-filters,.recycle-filters)>label:not(.page-search) :is(input,.select-trigger){border:0;background:transparent;padding:0;box-shadow:none}
+.app-shell .workbench-data-list .customer-selection-actions{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;width:100%;padding:0;background:transparent;border:0;border-radius:0;min-height:44px}
+.app-shell .workbench-data-list .customer-selection-summary{flex:1 1 280px;min-width:0}
+.app-shell .workbench-data-list .customer-selection-summary>small{display:block;height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:20px}
+.app-shell .workbench-data-list .customer-selection-buttons{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.app-shell .workbench-data-list .customer-selection-exports{display:flex;gap:8px}
+.app-shell .workbench-data-list .customer-selection-delete{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 35%,var(--line))}
+.app-shell .workbench-data-list .customer-selection-delete:disabled{opacity:.45}
+.app-shell .workbench-data-list .sales-customer-table{min-width:1120px;display:table}
+.app-shell .workbench-data-list .sales-customer-table thead{display:table-header-group}
+.app-shell .workbench-data-list .sales-customer-table tbody{display:table-row-group}
+.app-shell .workbench-data-list .sales-customer-table tr{display:table-row;padding:0;border:0}
+.app-shell .workbench-data-list .sales-customer-table td{display:table-cell;width:auto;position:static;grid-area:auto;padding:10px 14px}
+.app-shell .workbench-data-list .sales-customer-table td:before{content:none}
+.app-shell .workbench-data-list .sales-customer-table .customer-actions-cell{border-top:0}
+.app-shell .workbench-data-list :is(.notification-records,.preview-queue-table){min-width:1000px}
+.app-shell .workbench-data-list .notification-body{max-width:420px;white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0}
+.app-shell .workbench-data-list .notification-body.is-collapsed{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.app-shell .workbench-data-list .preview-expanded td{background:var(--surface-2);padding:16px}
+.app-shell .workbench-data-list .preview-link-history{margin:0;border:0;padding:0}
+@media(max-width:900px){.app-shell .workbench-data-list .customer-selection-summary{flex-basis:100%}.app-shell .workbench-data-list .customer-selection-buttons{width:100%}}
+@media(max-width:600px){.app-shell .workbench-data-list :is(.crm-toolbar-row,.crm-filters,.notification-filters,.recycle-filters)>label{flex:1 1 100%!important;min-width:0!important}.app-shell .workbench-data-list .customer-selection-buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px}.app-shell .workbench-data-list .customer-selection-exports{display:contents}.app-shell .workbench-data-list .customer-selection-buttons button{width:100%;min-width:0;padding:0 8px}.app-shell .workbench-data-list .customer-selection-summary{width:100%;flex-basis:100%;overflow:hidden}}
+.delete-impact-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:20px 0}.delete-impact-grid>div{display:flex;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line-soft);padding:8px 0}.delete-impact-grid dd{margin:0;font-variant-numeric:tabular-nums}
+.delete-disclosure{display:grid;gap:8px;margin:0 0 16px}.delete-disclosure details{border:1px solid var(--line-soft);border-radius:8px;padding:8px 12px}.delete-disclosure summary{cursor:pointer;font-weight:600}.delete-disclosure ul,.delete-blockers ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:8px}.delete-disclosure li,.delete-blockers li{display:grid;gap:2px;min-width:0}.delete-disclosure small,.delete-blockers small{color:var(--muted);overflow-wrap:anywhere}
+.delete-blockers{margin-top:12px;border-top:1px solid var(--line-soft);padding-top:12px}.delete-blockers h3{margin:0 0 4px;font-size:1rem}.delete-blockers li{border:1px solid var(--line-soft);border-radius:8px;padding:10px 12px}.delete-blockers p{margin:4px 0 0}.delete-blocker-confirm{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px}.delete-blockers li>button{justify-self:start;margin-top:8px}
+.app-shell .workbench-data-list .data-list-filters :is(.crm-toolbar,.crm-toolbar-row,.crm-filters,.notification-toolbar,.notification-filters,.recycle-toolbar,.recycle-filters){display:contents}
+.app-shell .workbench-data-list .data-list-filters .filter-actions{display:flex;align-items:center;flex:0 0 auto;width:auto;grid-column:auto;margin:0;padding:0;border:0}
+.app-shell .workbench-data-list .data-list-toolbar .customer-selection-hidden{white-space:nowrap}
+.app-shell .workbench-data-list .customer-detail-filters{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0;width:100%}
+.app-shell .workbench-data-list .customer-detail-filters>.customer-project-search{flex:0 1 320px;min-width:0}
+.app-shell .workbench-data-list .customer-detail-filters>label{min-width:220px;max-width:100%}
+.app-shell .workbench-data-list .customer-detail-filters .customer-project-search-control{border-radius:6px}
+.app-shell .workbench-data-list .customer-detail-empty{padding:24px}
+@media(max-width:600px){.app-shell .workbench-data-list .customer-detail-filters{grid-column:1/-1}.app-shell .workbench-data-list .customer-detail-filters>label{flex:1 1 100%;min-width:0}}
+.app-shell .workbench-data-list .crm-filters>label:has(input[type="number"]){flex-basis:160px;min-width:145px}
+@media(max-width:600px){.app-shell .workbench-data-list .crm-filters>label:has(input[type="number"]){min-width:0}}
+.app-shell .workbench-data-list .data-list-filters .admin-filters{width:100%;grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:0}
+.app-shell .workbench-data-list .data-list-filters :is(.admin-filter-fields,.admin-filter-footer){display:contents}
+.app-shell .workbench-data-list .data-list-filters .admin-filter-summary:empty{display:none}
+.app-shell .workbench-data-list .data-list-filters .admin-filter-actions{display:flex;flex-wrap:wrap;gap:8px;margin:0}
+.app-shell .workbench-data-list .data-list-filters .admin-filter-field{flex:0 1 200px;min-width:160px}
+@media(max-width:600px){.app-shell .workbench-data-list .data-list-filters .admin-filter-field{flex:1 1 100%;min-width:0}}
+
+/* Inline query groups remain together on small screens; long values retain space. */
+.app-shell .workbench-data-list .data-list-query > .data-list-filters { flex: 2 1 460px; }
+.app-shell .workbench-data-list .data-list-query .data-list-filters > div { width: auto; }
+.app-shell .workbench-data-list .data-list-query .admin-filter-field { min-width: 200px; }
+.app-shell .workbench-data-list .notification-records :is(th, td):first-child { min-width: 300px; }
+.app-shell .workbench-data-list .notification-records :is(th, td):nth-child(4) { min-width: 125px; }
+.app-shell .workbench-data-list .notification-records :is(th, td):last-child { min-width: 220px; }
+@media (max-width: 600px) {
+  .app-shell .workbench-data-list .data-list-query > .data-list-filters { flex-basis: 100%; }
+  .app-shell .workbench-data-list .customer-selection-buttons { grid-template-columns: 1fr 1fr; }
+  .app-shell .workbench-data-list .customer-selection-buttons > :first-child { grid-column: 1 / -1; }
+  .app-shell .workbench-data-list .customer-selection-exports { padding: 0; margin: 0; border: 0; }
+}
+
+.app-shell .workbench-data-list .notification-records :is(th, td):nth-child(5) { white-space: nowrap; }
+/* An empty review queue should not reserve a full-height black player. */
+.app-shell .quality-workbench-shell.is-empty { min-height: 240px; }
+.app-shell .quality-workbench-shell.is-empty .quality-review-console { background: var(--surface); color: var(--text); }
+.app-shell .quality-workbench-shell.is-empty .quality-all-clear { min-height: 240px; color: var(--muted); }
+.app-shell .quality-workbench-shell.is-empty .quality-all-clear strong { color: var(--text); }
+
+@media (max-width: 600px) {
+  .app-shell .workbench-data-list .data-list-actions .crm-heading-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; }
+  .app-shell .workbench-data-list .data-list-actions .crm-heading-actions > button { width: 100%; padding-inline: 8px; }
+  .app-shell .workbench-data-list .data-list-filters .filter-actions { width: 100%; justify-content: flex-start; }
+}
+
+.app-shell .quality-workbench-shell.is-empty .quality-all-clear p { color: var(--muted); padding-inline: 20px; }
+
+.app-shell .customer-detail-projects .customer-project-search > .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.app-shell .customer-detail-projects .customer-project-search-control { width: 100%; }
+
+/* These two list queries explicitly keep reset beside search when Panel separates filters. */
+.app-shell .workbench-data-list .list-query-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-width: 0; width: 100%; }
+.app-shell .workbench-data-list .data-list-search:has(> .list-query-controls) { flex-basis: 420px; }
+.app-shell .workbench-data-list .list-query-controls > .page-search { flex: 0 1 280px; min-width: 180px; max-width: 100%; }
+.app-shell .workbench-data-list .data-list-filters .standards-toolbar { display: contents; }
+.app-shell .workbench-data-list .standards-toolbar > .data-list-field { display: flex; align-items: center; gap: 8px; flex: 1 1 190px; min-width: 170px; max-width: 250px; height: 44px; margin: 0; padding: 0 10px; }
+.app-shell .workbench-data-list .standards-toolbar > .data-list-field > span { margin: 0; }
+.app-shell .workbench-data-list .standards-toolbar > .data-list-field > .select-control { flex: 1; min-width: 0; width: auto; }
+@media (max-width: 600px) {
+  .app-shell .workbench-data-list .list-query-controls > .page-search { flex-basis: 100%; width: 100%; min-width: 0; }
+  .app-shell .workbench-data-list .standards-toolbar > .data-list-field { min-width: 0; max-width: none; width: 100%; }
+}
+.production-discard-confirm{display:flex;flex-wrap:wrap;align-items:center;gap:6px;flex-basis:100%}.production-discard-confirm>span{flex-basis:100%;overflow-wrap:anywhere}

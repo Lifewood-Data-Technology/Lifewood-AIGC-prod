@@ -1,0 +1,152 @@
+/* Actual account directory: organization rail and one uninterrupted list workspace.
+   Brand colours and account mutation rules remain owned by the existing system. */
+.app-shell[data-access="system"] .admin-users-workspace {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  min-width: 0;
+  min-height: 450px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+}
+.app-shell[data-access="system"] .admin-users-organization {
+  min-width: 0;
+  padding: 18px 12px;
+  border-right: 1px solid var(--line);
+}
+.app-shell[data-access="system"] .admin-users-organization h2 {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+}
+.app-shell[data-access="system"] .admin-users-department-search {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  margin-bottom: 20px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.app-shell[data-access="system"] .admin-users-department-search svg { width: 14px; height: 14px; flex: none; color: var(--muted); }
+.app-shell[data-access="system"] .admin-users-workspace .admin-users-department-search input {
+  width: 100%; min-width: 0; height: 32px; min-height: 0; padding: 0;
+  border: 0; background: transparent; color: inherit; font: inherit; outline: none; box-shadow: none;
+}
+.app-shell[data-access="system"] .admin-users-department-search:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.app-shell[data-access="system"] .admin-users-departments { display: grid; align-content: start; gap: 4px; }
+.app-shell[data-access="system"] .admin-users-departments > button {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px;
+  border: 0; border-radius: 3px; padding: 8px 10px; background: transparent; color: var(--text);
+  font: inherit; text-align: left; box-shadow: none;
+}
+.app-shell[data-access="system"] .admin-users-departments > button.selected { color: var(--accent); background: var(--accent-soft); }
+.app-shell[data-access="system"] .admin-users-departments > button:hover { background: var(--surface-2); }
+.app-shell[data-access="system"] .admin-users-departments > button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-shell[data-access="system"] .admin-users-departments > button small { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.app-shell[data-access="system"] .admin-users-departments svg { width: 15px; height: 15px; }
+.app-shell[data-access="system"] .admin-users-departments p { margin: 8px 10px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.app-shell[data-access="system"] .admin-users-org-error button { margin: 4px 10px; color: var(--accent); }
+.app-shell[data-access="system"] .admin-users-content { min-width: 0; padding: 18px 20px 24px; }
+.app-shell[data-access="system"] .admin-users-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin: 0 0 18px; }
+.app-shell[data-access="system"] .admin-users-filters[hidden] { display: none; }
+.app-shell[data-access="system"] .admin-users-filters > label,
+.app-shell[data-access="system"] .admin-users-view-tools > label { display: flex; align-items: center; gap: 10px; font: inherit; }
+.app-shell[data-access="system"] .admin-users-filters label > span { flex: none; white-space: nowrap; }
+.app-shell[data-access="system"] .admin-users-workspace .admin-users-filters input,
+.app-shell[data-access="system"] .admin-users-workspace select {
+  height: 34px; min-height: 34px; min-width: 0; border: 1px solid var(--line); border-radius: 4px;
+  padding: 5px 10px; background: var(--surface); color: var(--text); font: inherit; box-shadow: none;
+}
+.app-shell[data-access="system"] .admin-users-filters input { width: 210px; }
+.app-shell[data-access="system"] .admin-users-filters select { width: 130px; }
+.app-shell[data-access="system"] .admin-users-filters > label:nth-child(3) select { width: 85px; }
+.app-shell[data-access="system"] .admin-users-query-actions,
+.app-shell[data-access="system"] .admin-users-edit-tools,
+.app-shell[data-access="system"] .admin-users-view-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.app-shell[data-access="system"] .admin-users-workspace :is(.admin-users-query-actions,.admin-users-tools) button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  height: 32px; min-height: 32px; padding: 5px 12px; border: 1px solid var(--line); border-radius: 4px;
+  background: var(--surface); color: var(--text); font: inherit; font-weight: 400; white-space: nowrap; box-shadow: none;
+}
+.app-shell[data-access="system"] .admin-users-query-actions button.primary-button { color: var(--surface); background: var(--accent); border-color: var(--accent); }
+.app-shell[data-access="system"] .admin-users-query-actions svg { width: 14px; height: 14px; }
+.app-shell[data-access="system"] .admin-users-tools { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.app-shell[data-access="system"] .admin-users-edit-tools button.admin-users-add { background: var(--accent-soft); color: var(--accent); }
+.app-shell[data-access="system"] .admin-users-edit-tools button.admin-users-export { background: var(--warn-soft); border-color: transparent; color: var(--warn); }
+.app-shell[data-access="system"] .admin-users-view-tools { margin-left: auto; }
+.app-shell[data-access="system"] .admin-users-view-tools select { width: 116px; font-size: 12px; }
+.app-shell[data-access="system"] .admin-users-tools button.admin-users-icon-button { width: 32px; border-radius: 50%; padding: 0; color: var(--muted); }
+.app-shell[data-access="system"] .admin-users-tools button.admin-users-icon-button svg { width: 14px; height: 14px; }
+.app-shell[data-access="system"] .admin-users-workspace button:disabled { opacity: .42; cursor: not-allowed; }
+.app-shell[data-access="system"] .admin-users-workspace :is(button,input,select):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.app-shell[data-access="system"] .admin-users-table-scroll { width: 100%; max-width: 100%; overflow: auto; border: 0; border-radius: 0; }
+.app-shell[data-access="system"] .main-content .admin-users-workspace .employee-accounts-table { width: 100%; min-width: 900px; table-layout: fixed; border: 0; margin: 0; }
+.app-shell[data-access="system"] .main-content .admin-users-workspace table :is(th,td) {
+  height: 46px; padding: 9px 10px; border: 0; border-bottom: 1px solid var(--line-soft);
+  background: transparent; font-size: 13px; line-height: 20px; font-weight: 400; text-align: left; white-space: nowrap;
+}
+.app-shell[data-access="system"] .main-content .admin-users-workspace table th { height: 42px; color: var(--muted); font-weight: 600; }
+.app-shell[data-access="system"] .main-content .admin-users-workspace table :is(th,td):first-child { width: 30px; min-width: 30px; text-align: center; padding-inline: 7px; }
+.app-shell[data-access="system"] .main-content .admin-users-workspace table :is(th,td):nth-child(2) { width: 70px; }
+.app-shell[data-access="system"] .main-content .admin-users-workspace table :is(th,td):nth-child(3) { width: 140px; min-width: 0; }
+.app-shell[data-access="system"] .main-content .admin-users-workspace table :is(th,td):nth-child(4) { width: 70px; }
+.app-shell[data-access="system"] .main-content .admin-users-workspace table :is(th,td):nth-child(5) { width: 90px; }
+.app-shell[data-access="system"] .main-content .admin-users-workspace table :is(th,td):nth-child(6) { width: 60px; }
+.app-shell[data-access="system"] .main-content .admin-users-workspace table :is(th,td):nth-child(7) { width: 125px; }
+.app-shell[data-access="system"] .main-content .admin-users-workspace table :is(th,td):nth-child(8) { width: 105px; }
+.app-shell[data-access="system"] .main-content .admin-users-workspace table :is(th,td):last-child { width: 110px; min-width: 0; }
+.app-shell[data-access="system"] .main-content .admin-users-workspace table td > :is(strong,span) { display: block; overflow: hidden; text-overflow: ellipsis; max-width: 100%; font-weight: 400; }
+.app-shell[data-access="system"] .main-content .admin-users-workspace table td > strong { color: var(--accent); font-weight: 500; }
+.app-shell[data-access="system"] .main-content .admin-users-workspace table tr.is-selected { background: var(--accent-soft); }
+.app-shell[data-access="system"] .main-content .admin-users-workspace table tbody tr:hover { background: var(--surface-2); }
+.app-shell[data-access="system"] .main-content .admin-users-workspace table td.table-empty-cell { height: 180px; width: auto; text-align: center; white-space: normal; color: var(--muted); }
+.app-shell[data-access="system"] .admin-users-workspace input[type="checkbox"] { width: 15px; height: 15px; min-height: 0; margin: 0; accent-color: var(--accent); vertical-align: middle; }
+.app-shell[data-access="system"] .main-content .admin-users-workspace .password-state { display: inline-block; padding: 2px 6px; border-radius: 3px; font-size: 12px; }
+.app-shell[data-access="system"] .admin-users-workspace .account-row-actions { display: flex; flex-wrap: nowrap; gap: 8px; min-width: 0; }
+.app-shell[data-access="system"] .admin-users-workspace .account-row-actions button { min-height: 28px; height: 28px; padding: 0; border: 0; background: transparent; color: var(--accent); font-size: 12px; font-weight: 400; box-shadow: none; }
+.app-shell[data-access="system"] .main-content .admin-users-workspace button.admin-user-status {
+  display: inline-flex; align-items: center; width: 36px; min-width: 36px; height: 20px; min-height: 20px;
+  padding: 2px; border: 0; border-radius: 20px; background: var(--muted); vertical-align: middle; box-shadow: none;
+}
+.app-shell[data-access="system"] .main-content .admin-users-workspace button.admin-user-status[aria-checked="true"] { background: var(--accent); }
+.app-shell[data-access="system"] .admin-user-status > span { width: 16px; height: 16px; border-radius: 50%; background: var(--surface); }
+.app-shell[data-access="system"] .admin-user-status[aria-checked="true"] > span { margin-left: 16px; }
+.app-shell[data-access="system"] .admin-users-pagination { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 12px; padding-top: 26px; font-size: 12px; color: var(--muted); }
+.app-shell[data-access="system"] .admin-users-pagination .table-pagination { display: flex; flex: 0 1 auto; width: auto; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin: 0; padding: 0; border: 0; background: transparent; font-size: 12px; }
+.app-shell[data-access="system"] .admin-users-pagination .table-pagination > span { margin: 0; }
+.app-shell[data-access="system"] .admin-users-pagination .table-pagination :is(button,.select-trigger) { width: auto; min-width: 30px; height: 30px; min-height: 30px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 4px; font-size: 12px; background: var(--surface); color: var(--text); }
+.app-shell[data-access="system"] .admin-users-pagination .table-pagination b { display: inline-flex; min-width: 46px; justify-content: center; padding: 5px 8px; font-size: 12px; background: var(--accent-soft); color: var(--accent); border-radius: 3px; font-weight: 500; }
+.app-shell[data-access="system"] :is(.account-create-modal,.account-profile-modal) { width: min(680px, calc(100vw - 32px)); border-radius: 4px; }
+.app-shell[data-access="system"] :is(.account-create-modal,.account-profile-modal) > header { padding: 20px 24px; }
+.app-shell[data-access="system"] :is(.account-create-modal,.account-profile-modal) h2 { font-size: 18px; line-height: 26px; font-weight: 500; }
+.app-shell[data-access="system"] :is(.account-create-modal,.account-profile-modal) .modal-grid { gap: 20px; }
+.app-shell[data-access="system"] :is(.account-create-modal,.account-profile-modal) label { font-size: 13px; }
+.app-shell[data-access="system"] :is(.account-create-modal,.account-profile-modal) input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.app-shell[data-access="system"] :is(.account-create-modal,.account-profile-modal) .select-trigger { min-height: 36px; height: 36px; border-radius: 4px; background: var(--surface); font-size: 13px; }
+.app-shell[data-access="system"] :is(.account-create-modal,.account-profile-modal) footer { padding: 16px 24px; }
+.app-shell[data-access="system"] :is(.account-create-modal,.account-profile-modal) footer button { min-height: 34px; height: 34px; border-radius: 4px; padding: 6px 16px; font-size: 13px; box-shadow: none; }
+@media (max-width: 1440px) {
+  .app-shell[data-access="system"] .admin-users-workspace { grid-template-columns: 168px minmax(0,1fr); }
+  .app-shell[data-access="system"] .admin-users-content { padding: 16px; }
+  .app-shell[data-access="system"] .admin-users-filters { gap: 10px 14px; }
+}
+@media (max-width: 700px) {
+  .app-shell[data-access="system"] .admin-users-workspace { grid-template-columns: minmax(0,1fr); }
+  .app-shell[data-access="system"] .admin-users-organization { padding: 14px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .app-shell[data-access="system"] .admin-users-organization h2 { margin-bottom: 10px; }
+  .app-shell[data-access="system"] .admin-users-department-search { margin-bottom: 10px; }
+  .app-shell[data-access="system"] .admin-users-departments { max-height: 160px; overflow: auto; }
+  .app-shell[data-access="system"] .admin-users-content { padding: 14px; }
+  .app-shell[data-access="system"] .admin-users-filters > label { width: 100%; }
+  .app-shell[data-access="system"] .admin-users-filters label > span { width: 90px; }
+  .app-shell[data-access="system"] .admin-users-filters input,
+  .app-shell[data-access="system"] .admin-users-filters select,
+  .app-shell[data-access="system"] .admin-users-filters > label:nth-child(3) select { flex: 1; width: 0; }
+  .app-shell[data-access="system"] .admin-users-view-tools { margin-left: 0; }
+  .app-shell[data-access="system"] .admin-users-pagination { gap: 8px; }
+}

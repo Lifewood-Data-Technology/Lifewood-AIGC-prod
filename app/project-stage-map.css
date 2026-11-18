@@ -1,0 +1,144 @@
+/* Native workflow visualization; reuse the established palette. */
+.project-stage-map { display: grid; gap: 1.25rem; min-width: 0; container-type: inline-size; }
+.project-stage-map button[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 2px; }
+.project-stage-map :is(button, select, summary):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.psm-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; padding: 1.25rem 0; border-block: 1px solid var(--line); }
+.psm-filters label { display: grid; gap: .5rem; min-width: 0; flex: 1 1 12rem; max-width: 23rem; font-size: .875rem; color: var(--muted); }
+.psm-filters select { width: 100%; min-width: 0; height: 2.75rem; font: inherit; font-size: .9375rem; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: .625rem; padding: .5rem .75rem; }
+.psm-filters button { min-height: 2.75rem; }
+.psm-result-count { margin-left: auto; align-self: center; color: var(--muted); font-size: .875rem; }
+.psm-video-groups { display: grid; gap: 1rem; }
+.psm-video { min-width: 0; border: 1px solid var(--line); border-radius: .75rem; overflow: hidden; }
+.psm-video > summary { cursor: pointer; padding: 1rem 1.25rem; font-weight: 700; font-size: 1rem; overflow-wrap: anywhere; background: var(--surface); }
+.psm-video > summary b { color: var(--accent); margin-right: .5rem; }
+.psm-video > summary small { display: inline-block; margin-left: 1rem; color: var(--muted); font-size: .875rem; font-weight: 400; }
+.psm-table-wrap { overflow-x: auto; max-width: 100%; }
+.psm-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.psm-table caption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.psm-table th, .psm-table td { padding: 1rem; border-top: 1px solid var(--line); text-align: left; vertical-align: middle; overflow-wrap: anywhere; line-height: 1.5; }
+.psm-table th { font-size: .875rem; color: var(--muted); font-weight: 600; background: var(--surface); }
+.psm-table th:nth-child(1) { width: 16%; }
+.psm-table th:nth-child(2) { width: 38%; }
+.psm-table th:nth-child(3) { width: 22%; }
+.psm-table th:nth-child(4) { width: 24%; }
+.psm-table td { font-size: 1rem; }
+.psm-table td > strong { display: block; font-size: 1rem; }
+.psm-table td > small { display: block; margin-top: .25rem; font-size: .875rem; color: var(--muted); }
+.psm-task-status { display: flex; gap: .25rem .75rem; flex-wrap: wrap; align-items: baseline; margin-top: .625rem; }
+.psm-task-status strong { font-size: .9375rem; color: var(--accent); }
+.psm-task-status small { font-size: .875rem; color: var(--muted); }
+.project-stage-map .needs-attention { color: var(--warn); }
+.psm-assignment { display: grid; grid-template-columns: 4rem minmax(0, 1fr); gap: .5rem; margin: .25rem 0; }
+.psm-assignment span { font-size: .875rem; color: var(--muted); }
+.psm-assignment strong { font-size: .9375rem; font-weight: 500; }
+.psm-mobile-label { display: none; }
+.psm-empty { padding: 1.25rem; margin: 0; color: var(--muted); line-height: 1.6; }
+@container (max-width: 900px) {
+  .psm-table, .psm-table tbody { display: block; }
+  .psm-table thead { display: none; }
+  .psm-table tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: 1rem; border-top: 1px solid var(--line); gap: 1rem; }
+  .psm-table td { display: block; padding: 0; border: 0; }
+  .psm-table td:nth-child(1), .psm-table td:nth-child(2) { grid-column: 1 / -1; }
+  .psm-table .psm-task-identity { display: flex; align-items: baseline; gap: .75rem; }
+  .psm-mobile-label { display: block; color: var(--muted); font-size: .875rem; margin-bottom: .375rem; }
+}
+@container (max-width: 550px) {
+  .psm-filters label { max-width: none; flex-basis: 100%; }
+  .psm-result-count { margin-left: 0; }
+  .psm-table tr { grid-template-columns: minmax(0, 1fr); }
+  .psm-video > summary small { display: block; margin: .375rem 0 0; }
+}
+
+
+/* Charts lead the page; task-by-task controls stay collapsed below. */
+.psm-owner-strip { display: flex; flex-wrap: wrap; gap: 1rem 2rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--line); }
+.psm-owner-strip > span { display: flex; flex-wrap: wrap; gap: .375rem .75rem; font-size: .875rem; color: var(--muted); }
+.psm-owner-strip strong { color: var(--text); font-size: 1rem; overflow-wrap: anywhere; }
+.psm-chart-grid { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 1.5rem; }
+.project-stage-map figure { margin: 0; padding: 1.5rem; background: var(--surface); border: 1px solid var(--line); border-radius: 1rem; min-width: 0; }
+.project-stage-map figcaption h3 { margin: 0; font-size: 1.125rem; line-height: 1.5; }
+.project-stage-map figcaption p { margin: .375rem 0 0; font-size: .875rem; line-height: 1.6; color: var(--muted); }
+.psm-completion-chart { display: flex; flex-direction: column; }
+.psm-donut { width: min(100%, 19rem); aspect-ratio: 1; margin: auto; position: relative; }
+.psm-donut svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.psm-donut circle { fill: none; stroke-linecap: butt; }
+.psm-ring-track { stroke: var(--surface-2); }
+.psm-ring-production { stroke: var(--accent); }
+.psm-ring-delivery { stroke: var(--gold); }
+.psm-donut-label { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .375rem; pointer-events: none; }
+.psm-donut-label > strong { font-size: 2.75rem; line-height: 1.1; color: var(--accent); font-variant-numeric: tabular-nums; }
+.psm-donut-label > span { font-size: 1rem; font-weight: 600; }
+.psm-donut-label > small { font-size: .875rem; color: var(--muted); }
+.psm-ring-key { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+.psm-ring-key > div { display: grid; gap: .5rem; }
+.psm-ring-key span { display: flex; gap: .5rem; align-items: center; font-size: .875rem; }
+.psm-ring-key strong { font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.psm-ring-key small { color: var(--muted); font-size: .875rem; }
+.psm-ring-key i { width: .625rem; height: .625rem; border-radius: 50%; }
+.psm-ring-key .production { background: var(--accent); }
+.psm-ring-key .delivery { background: var(--gold); }
+.psm-distribution-chart { --chart-label: 7.75rem; --chart-value: 4rem; }
+.psm-distribution-axis { display: flex; justify-content: space-between; margin: 1.5rem calc(var(--chart-value) + .75rem) .625rem calc(var(--chart-label) + .75rem); color: var(--muted); font-size: .875rem; font-variant-numeric: tabular-nums; }
+.psm-distribution-bars { display: grid; gap: .25rem; }
+.psm-distribution-row { display: grid; grid-template-columns: var(--chart-label) minmax(0, 1fr) var(--chart-value); gap: .75rem; align-items: center; min-height: 2.75rem; padding: .375rem 0; border: 0; border-radius: .375rem; background: transparent; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.psm-distribution-row:hover { background: var(--accent-soft); }
+.psm-bar-label { font-size: .9375rem; line-height: 1.4; }
+.psm-distribution-row > strong { text-align: right; font-size: 1rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.psm-distribution-row > strong small { font-size: .875rem; font-weight: 400; color: var(--muted); }
+.psm-bar-track { height: 1.5rem; display: block; border-left: 1px solid var(--line); background: repeating-linear-gradient(to right, transparent 0 calc(25% - 1px), var(--line-soft) calc(25% - 1px) 25%); }
+.psm-bar-track > i { height: 100%; display: block; border-radius: 0 .25rem .25rem 0; }
+.psm-excluded { min-height: 2.75rem; margin-top: .75rem; font-size: .875rem; text-align: left; color: var(--muted); }
+.project-stage-map [data-stage="materials"] { background: var(--line); }
+.project-stage-map [data-stage="assignment"] { background: color-mix(in srgb, var(--muted) 55%, var(--surface)); }
+.project-stage-map [data-stage="production"] { background: var(--gold); }
+.project-stage-map [data-stage="quality"] { background: var(--warn); }
+.project-stage-map [data-stage="customer"] { background: color-mix(in srgb, var(--accent) 45%, var(--surface)); }
+.project-stage-map [data-stage="delivery"] { background: color-mix(in srgb, var(--accent) 70%, var(--surface)); }
+.project-stage-map [data-stage="done"] { background: var(--accent); }
+.project-stage-map [data-stage="paused"] { background: repeating-linear-gradient(135deg, var(--warn-soft) 0 5px, var(--warn) 5px 7px); }
+.project-stage-map [data-stage="unknown"] { background: var(--bad); }
+.psm-video-chart { --video-label: 13rem; --video-value: 6.5rem; --video-gap: 1.25rem; }
+.psm-video-chart > figcaption { display: flex; align-items: baseline; flex-wrap: wrap; justify-content: space-between; gap: .75rem 1.5rem; }
+.psm-video-chart > figcaption > span { color: var(--muted); font-size: .875rem; }
+.psm-chart-legend { display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; margin: 1.25rem 0; }
+.psm-chart-legend > span { display: flex; align-items: center; gap: .5rem; font-size: .875rem; color: var(--muted); }
+.psm-chart-legend i { display: block; width: .875rem; height: .875rem; border-radius: .2rem; flex-shrink: 0; }
+.psm-video-chart-axis { display: flex; justify-content: space-between; margin: 1.5rem calc(var(--video-value) + var(--video-gap)) .5rem calc(var(--video-label) + var(--video-gap)); font-size: .875rem; color: var(--muted); }
+.psm-video-chart-rows { display: grid; max-height: 38rem; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.psm-video-chart-row { display: grid; grid-template-columns: var(--video-label) minmax(0, 1fr) var(--video-value); gap: var(--video-gap); padding: 1.25rem 0; border-top: 1px solid var(--line-soft); align-items: start; }
+.psm-video-chart-name { display: grid; gap: .375rem; min-width: 0; min-height: 2.75rem; padding: 0; background: transparent; border: 0; color: var(--text); font: inherit; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.psm-video-chart-name strong { font-size: 1rem; line-height: 1.5; }
+.psm-video-chart-name:hover strong { text-decoration: underline; text-underline-offset: .2rem; }
+.psm-video-chart-name small { color: var(--accent); font-size: .875rem; font-weight: 700; }
+.psm-video-chart-name > span { color: var(--muted); font-size: .875rem; }
+.psm-video-chart-main { min-width: 0; padding-top: .25rem; }
+.psm-stacked-bar { display: flex; align-items: stretch; height: 2.5rem; width: 100%; border-radius: .5rem; overflow: hidden; background: var(--surface-2); }
+.psm-stacked-bar > i { display: block; flex: 0 0 auto; height: 100%; box-shadow: inset -1px 0 var(--surface); }
+.psm-stacked-bar > span { margin: auto; color: var(--muted); font-size: .875rem; }
+.psm-video-owners { display: flex; flex-wrap: wrap; gap: .5rem 1rem; margin-top: .875rem; }
+.psm-video-owners > span { font-size: .875rem; color: var(--muted); overflow-wrap: anywhere; }
+.psm-video-owners b { color: var(--text); font-weight: 500; margin-left: .5rem; }
+.psm-video-chart-value { display: grid; gap: .375rem; text-align: right; font-variant-numeric: tabular-nums; }
+.psm-video-chart-value strong { font-size: 1.625rem; color: var(--accent); line-height: 1.3; }
+.psm-video-chart-value > span, .psm-video-chart-value > small { color: var(--muted); font-size: .875rem; line-height: 1.4; }
+.psm-note { margin: 0; color: var(--muted); font-size: .875rem; line-height: 1.65; }
+.psm-task-details { border-top: 1px solid var(--line); padding-top: .5rem; scroll-margin-top: 5.5rem; }
+.psm-task-details > summary { cursor: pointer; padding: 1rem 0; font-size: 1rem; font-weight: 600; }
+.psm-task-details > summary small { display: inline-block; margin-left: 1rem; font-size: .875rem; color: var(--muted); font-weight: 400; }
+@container (max-width: 900px) {
+  .psm-chart-grid { grid-template-columns: minmax(0, 1fr); }
+  .psm-completion-chart { align-items: stretch; }
+  .psm-donut { margin-block: 1rem; }
+  .psm-video-chart { --video-label: 10rem; --video-value: 5.5rem; --video-gap: 1rem; }
+}
+@container (max-width: 550px) {
+  .project-stage-map figure { padding: 1rem; }
+  .psm-distribution-chart { --chart-label: 6rem; --chart-value: 3rem; }
+  .psm-distribution-axis { margin-left: 6.75rem; margin-right: 3.75rem; }
+  .psm-distribution-axis > span:nth-child(even) { visibility: hidden; }
+  .psm-video-chart-axis { display: none; }
+  .psm-video-chart-row { grid-template-columns: minmax(0, 1fr) 5rem; gap: .75rem; }
+  .psm-video-chart-main { grid-column: 1 / -1; grid-row: 2; }
+  .psm-video-chart-value { grid-column: 2; grid-row: 1; }
+  .psm-task-details > summary small { display: block; margin: .5rem 0 0; }
+}

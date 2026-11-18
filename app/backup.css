@@ -1,0 +1,22 @@
+.backup-panel { margin-top: 2rem; padding: 1.5rem; border: 1px solid var(--border, #cddbd5); border-radius: 18px; background: var(--surface, #fff); }
+.backup-panel > header, .backup-actions, .backup-row-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.backup-panel h2 { margin: 0 0 .5rem; font-size: 1.25rem; }
+.backup-panel h3 { font-size: 1rem; }
+.backup-panel p, .backup-actions > span { font-size: .9375rem; line-height: 1.65; }
+.backup-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin: 1.5rem 0; }
+.backup-summary > div { display: flex; flex-direction: column; gap: .5rem; padding: 1rem; border: 1px solid var(--border, #cddbd5); border-radius: 12px; overflow-wrap: anywhere; }
+.backup-summary span, .backup-panel small { font-size: .875rem; line-height: 1.5; color: var(--muted, #667970); }
+.backup-notice, .backup-confirm { padding: 1rem; border-radius: 12px; border: 1px solid var(--border, #cddbd5); background: var(--surface-muted, #f3f7f4); }
+.backup-confirm { margin-top: 1rem; }
+.backup-check { display: flex; gap: .75rem; align-items: flex-start; margin: 1rem 0; font-size: .9375rem; }
+.backup-check input { flex: 0 0 auto; width: 18px; height: 18px; margin-top: .2rem; }
+.backup-phrase { display: flex; flex-direction: column; gap: .5rem; max-width: 24rem; margin: 1rem 0; }
+.backup-phrase input { padding: .75rem; border: 1px solid var(--border, #cddbd5); border-radius: 8px; background: #fff; font: inherit; }
+.backup-table-scroll { overflow-x: auto; }
+.backup-panel table { width: 100%; border-collapse: collapse; }
+.backup-panel th, .backup-panel td { padding: 1rem .75rem; text-align: left; border-bottom: 1px solid var(--border, #cddbd5); vertical-align: top; font-size: .9375rem; }
+.backup-panel td small { display: block; margin-top: .4rem; overflow-wrap: anywhere; max-width: 32rem; }
+.backup-history { margin-top: 1.5rem; }
+.backup-history nav { margin-top: 1rem; justify-content: flex-end; }
+.backup-panel button:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 800px) { .backup-summary { grid-template-columns: 1fr; } .backup-panel { padding: 1rem; } }

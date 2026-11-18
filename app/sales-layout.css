@@ -1,0 +1,309 @@
+/* Sales and project-owner list composition, matching project-management controls and list typography.
+   Workflow logic, other workspaces and dialogs retain their existing presentation. */
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-list-layout { display:grid; gap:1.25rem; min-width:0; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel { margin:0; padding:1rem 1.15rem; border:1px solid color-mix(in srgb,#034e34 18%,var(--line)); border-radius:14px; background:var(--surface); box-shadow:0 10px 28px rgba(15,35,24,.055); }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel .filter-group { margin:0; padding:0; border:0; border-radius:0; background:transparent; overflow:visible; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel .filter-group-heading { display:none; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel :is(.crm-toolbar-row,.notification-filters) {
+  display:grid; grid-template-columns:minmax(12rem,1fr) repeat(2,minmax(10rem,12rem)) auto;
+  gap:.7rem; align-items:center; width:100%; padding:0;
+}
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel .crm-toolbar-row:has(.crm-export-actions),
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel .crm-toolbar-row:has(+ .crm-filters) { grid-template-columns:minmax(12rem,1fr) minmax(12rem,16rem); }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel .crm-filters {
+  display:grid; grid-template-columns:repeat(4,minmax(9rem,1fr)) auto; gap:.7rem; align-items:center;
+  margin:.8rem 0 0; padding:.8rem 0 0; border-top:1px solid var(--line-soft);
+}
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel :is(label,.toolbar-select,.page-search) {
+  margin:0; min-width:0; max-width:none; width:100%; grid-column:auto; grid-row:auto;
+  font-size:1rem; font-weight:400; line-height:1.4;
+}
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel .filter-group label > span,
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel .select-trigger {
+  font-family:inherit; font-size:1rem; font-weight:400; line-height:1.4; color:var(--text); letter-spacing:normal; text-transform:none;
+}
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel .filter-group label:has(>input[type="date"]) > span:not(:has(svg)) {
+  font-size:.8rem; color:var(--muted);
+}
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel .filter-group .select-control > .select-trigger { background:transparent; box-shadow:none; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel .filter-group input { font-family:inherit; font-size:1rem; font-weight:400; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel .page-search { font-size:15px; border:1px solid var(--line); background:var(--surface-2); border-radius:10px; min-height:44px; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel .page-search input { background:transparent; font-size:15px; line-height:1.58; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel .filter-group input[type="date"] { font-size:.9rem; line-height:1.58; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel .filter-actions { width:auto; padding:0; margin:0; grid-column:auto; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel .link-button { font-weight:600; font-size:.9375rem; color:var(--accent); white-space:nowrap; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel .recycle-toolbar { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.7rem; align-items:center; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel .crm-filters > .link-button { grid-column:auto; justify-self:end; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel .notification-filters { grid-template-columns:minmax(12rem,1fr) repeat(2,minmax(14rem,16rem)) auto; }
+/* Page-level navigation follows the account-management navigation baseline. */
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-list-layout > .list-status-tabs {
+  display:flex; flex-wrap:wrap; justify-content:flex-start; gap:1.75rem; width:auto;
+  margin:0; padding:0; border:0; border-bottom:1px solid var(--line);
+  border-radius:0; background:transparent; box-shadow:none; overflow:visible;
+}
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-list-layout > .list-status-tabs button {
+  display:inline-flex; align-items:center; justify-content:center; gap:.65rem; min-height:40px;
+  padding:.65rem 0; border:0; border-bottom:3px solid transparent; border-radius:0;
+  background:transparent; color:var(--muted); font-size:.9375rem; font-weight:600; white-space:normal; box-shadow:none;
+}
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-list-layout > .list-status-tabs button.active {
+  border-bottom-color:var(--accent); background:transparent; color:var(--accent); font-weight:600;
+}
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-list-layout > .list-status-tabs button:hover { border-color:var(--accent); color:var(--accent); }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-list-layout > .list-status-tabs button:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-list-layout > .list-status-tabs button b,
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-list-layout > .workflow-tabs.list-status-tabs button > span {
+  display:inline; min-width:0; min-height:0; margin:0; padding:0; border:0; border-radius:0;
+  font-size:.8rem; font-weight:400; font-variant-numeric:tabular-nums; background:transparent; color:inherit; opacity:.8;
+}
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-list-panel { border:1px solid color-mix(in srgb,#034e34 18%,var(--line)); border-radius:14px; box-shadow:none; overflow:hidden; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-list-panel > header.list-title {
+  justify-content:flex-start; min-height:3.8rem; padding:.8rem 1rem; gap:1rem;
+  color:var(--text); font-size:1rem; line-height:1.58; letter-spacing:normal; text-transform:none; background:var(--surface);
+}
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-list-panel > header.list-title b { font-size:1.05rem; font-weight:700; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-list-panel > header.list-title > span { font-weight:700; letter-spacing:normal; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-list-actions { margin-left:auto; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-list-panel > .panel-body { padding:0; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-list-panel .work-table { margin:0; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) :is(.sales-list-panel,.business-recycle-panel) .work-table th {
+  padding:.7rem 1rem; background:var(--surface-2); color:var(--muted); font-size:.83rem; font-weight:400; line-height:1.58; letter-spacing:normal; text-transform:none;
+}
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-list-panel .notification-list { padding:0 1rem; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-list-panel .preview-task-list:not(:has(.empty-state)) { padding:1rem; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .business-recycle-panel { margin-bottom:1.25rem; box-shadow:none; overflow:hidden; border-radius:14px; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .business-recycle-panel > header { padding:1rem 1.15rem; color:var(--text); font-size:1rem; letter-spacing:normal; text-transform:none; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .business-recycle-panel > .panel-body { padding:0; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .business-recycle-panel .panel-body > p { margin:0; padding:1rem 1.15rem; color:var(--muted); font-size:.875rem; line-height:1.6; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .business-recycle-panel .work-table-wrap > p { display:grid; place-items:center; margin:0; min-height:8rem; padding:1.5rem; color:var(--muted); font-size:.875rem; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .recycle-note { margin:0 0 1.25rem; padding:.8rem 1.15rem; border:1px solid var(--line-soft); border-radius:10px; background:var(--surface); color:var(--muted); font-size:.875rem; line-height:1.6; }
+@media(max-width:1100px) {
+  .app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel :is(.crm-toolbar-row,.notification-filters) { grid-template-columns:minmax(12rem,1fr) repeat(2,minmax(9rem,11rem)); }
+  .app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel .notification-filters { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel .crm-filters { grid-template-columns:repeat(2,minmax(0,1fr)) auto; }
+  .app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel .crm-filters > .link-button { grid-column:3; grid-row:1 / 3; }
+}
+@media(max-width:700px) {
+  .app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel :is(.crm-toolbar-row,.crm-toolbar-row:has(+ .crm-filters),.notification-filters,.crm-filters,.recycle-toolbar) { display:grid; grid-template-columns:minmax(0,1fr); }
+  .app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-query-panel .crm-filters > .link-button { grid-column:auto; grid-row:auto; }
+  .app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-list-actions { width:100%; margin:0; }
+  .app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-list-panel > header.list-title { flex-wrap:wrap; }
+}
+/* Sales follow-up has three primary controls: do not reserve the manager's owner column. */
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-project-filters:not(.sales-query-panel) { box-shadow:0 10px 28px rgba(15,35,24,.055); }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-project-filters > .primary-row { grid-template-columns:minmax(16rem,1fr) repeat(2,minmax(10rem,14rem)); }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-project-filters > .secondary-row { grid-template-columns:minmax(9rem,12rem) repeat(3,minmax(11rem,14rem)) minmax(7rem,1fr); }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-project-filters > .filter-row label { min-width:0; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-project-filters .search-control input { border:1px solid var(--line); border-radius:10px; font-family:inherit; font-size:15px; line-height:1.58; padding:.65rem .65rem .65rem 2.5rem; background:var(--surface-2); }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-project-filters > .filter-row .select-trigger { font-family:inherit; font-size:1rem; font-weight:400; line-height:1.4; padding:.65rem .8rem; border-radius:10px; color:var(--text); }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-project-filters .date-control > span { font-size:.8rem; font-weight:400; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-project-filters .date-control > input[type="date"] { font-family:inherit; font-size:.9rem; font-weight:400; line-height:1.58; padding:.65rem 0; }
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-project-filters .filter-reset { font-family:inherit; font-size:15px; font-weight:600; line-height:1.58; color:var(--accent); padding:.2rem 0; min-height:1.8rem; }
+@media(max-width:1450px) {
+  .app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-project-filters > .secondary-row { grid-template-columns:repeat(4,minmax(0,1fr)); }
+  .app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-project-filters .filter-reset { grid-column:1/-1; justify-self:end; }
+}
+@media(max-width:1050px) {
+  .app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-project-filters > :is(.primary-row,.secondary-row) { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:700px) {
+  .app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-project-filters > :is(.primary-row,.secondary-row) { display:grid; grid-template-columns:minmax(0,1fr); }
+}
+/* One typography and reset-action contract for every sales filter surface. */
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-project-filters :is(.date-control > span,.date-control > input[type="date"],.filter-group label:has(> input[type="date"]) > span,.filter-group input[type="date"]) {
+  font-family:inherit; font-size:1rem; font-weight:400; line-height:1.4; color:var(--text);
+}
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-project-filters :is(.filter-reset,.filter-group .link-button) {
+  display:inline-flex; align-items:center; justify-content:center; align-self:center;
+  min-height:40px; padding:8px 12px; border:1px solid transparent; border-radius:8px;
+  background:transparent; box-shadow:none; font-family:inherit; font-size:15px; font-weight:600;
+  line-height:1.58; color:var(--accent); text-decoration:none; white-space:nowrap; cursor:pointer;
+}
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-project-filters :is(.filter-reset,.filter-group .link-button):hover {
+  border-color:var(--line); background:var(--surface); color:var(--accent);
+}
+.app-shell:is([data-access="client"],[data-access="project"],[data-access="production"],[data-access="quality"]) .sales-project-filters :is(.filter-reset,.filter-group .link-button):focus-visible {
+  outline:2px solid var(--accent); outline-offset:2px;
+}
+
+/* Retain the project owner's existing advanced-filter toggle. */
+.app-shell[data-access="project"] .sales-query-panel .crm-toolbar-row:has(> .secondary-button) { grid-template-columns:minmax(12rem,1fr) auto minmax(12rem,16rem); }
+@media(max-width:700px) { .app-shell[data-access="project"] .sales-query-panel .crm-toolbar-row:has(> .secondary-button) { grid-template-columns:minmax(0,1fr); } }
+
+/* Project-owner menus audited in the browser: preserve their controls and data views. */
+.app-shell:is([data-access="project"],[data-access="production"]) .sales-query-panel .standards-toolbar,
+.app-shell[data-access="project"] .sales-query-panel .team-filters {
+  display:grid; grid-template-columns:minmax(12rem,1fr) repeat(2,minmax(10rem,14rem)) auto;
+  gap:.7rem; align-items:center; margin:0;
+}
+.app-shell[data-access="project"] .sales-query-panel .team-filters:not(:has(label:nth-of-type(3))) { grid-template-columns:minmax(12rem,1fr) minmax(10rem,16rem) auto; }
+.app-shell[data-access="project"] .sales-query-panel .team-filters > label:first-child { grid-column:auto; }
+.app-shell[data-access="project"] .sales-query-panel .team-filters > label:first-child > span:first-child { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+.app-shell[data-access="project"] .sales-query-panel .team-search { display:flex; align-items:center; gap:.6rem; width:100%; min-height:44px; border:1px solid var(--line); border-radius:10px; background:var(--surface-2); padding:0 .875rem; }
+.app-shell[data-access="project"] .sales-query-panel .team-search input { min-width:0; width:100%; font-size:15px; font-weight:400; background:transparent; border:0; }
+.app-shell[data-access="project"] .sales-query-panel :is(.team-filters,.standards-toolbar) > .link-button { grid-column:auto; justify-self:end; }
+.app-shell[data-access="project"] .team-work-note { padding:1rem; font-size:.875rem; }
+.app-shell:is([data-access="project"],[data-access="production"]) .asset-library-toolbar.asset-filter-group {
+  display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.8rem; margin:0 0 1rem; padding:1rem;
+  border:1px solid var(--line); border-radius:14px; background:var(--surface);
+}
+.app-shell:is([data-access="project"],[data-access="production"]) .asset-library-toolbar.asset-filter-group > .filter-group-heading { grid-column:1/-1; margin:0; padding:0 0 .8rem; }
+.app-shell:is([data-access="project"],[data-access="production"]) .asset-library-toolbar.asset-filter-group > label { grid-column:1; grid-row:2; width:100%; max-width:none; margin:0; border:1px solid var(--line); border-radius:10px; background:var(--surface-2); }
+.app-shell:is([data-access="project"],[data-access="production"]) .asset-library-toolbar.asset-filter-group > label input { font-family:inherit; font-size:15px; font-weight:400; background:transparent; }
+.app-shell:is([data-access="project"],[data-access="production"]) .asset-library-toolbar.asset-filter-group > .asset-owner-filter { grid-column:2; grid-row:2; margin:0; }
+@media(max-width:700px) {
+ .app-shell[data-access="project"] .sales-query-panel :is(.standards-toolbar,.team-filters,.team-filters:not(:has(label:nth-of-type(3)))) { grid-template-columns:minmax(0,1fr); }
+ .app-shell:is([data-access="project"],[data-access="production"]) .asset-library-toolbar.asset-filter-group { grid-template-columns:minmax(0,1fr); }
+ .app-shell:is([data-access="project"],[data-access="production"]) .asset-library-toolbar.asset-filter-group > .asset-owner-filter { grid-column:1; grid-row:3; justify-self:start; }
+}
+.app-shell[data-access="project"] .sales-query-panel .crm-toolbar-row:has(+ .crm-filters):has(> .secondary-button) { grid-template-columns:minmax(12rem,1fr) auto minmax(12rem,16rem); }
+@media(max-width:700px) { .app-shell[data-access="project"] .sales-query-panel .crm-toolbar-row:has(+ .crm-filters):has(> .secondary-button) { grid-template-columns:minmax(0,1fr); } }
+
+/* Customer information uses the shared breadcrumb and heading components. */
+.customer-detail { display:grid; gap:1.25rem; min-width:0; }
+.customer-detail > .business-breadcrumb { margin-bottom:0; }
+.customer-detail-heading .page-heading { margin:0 0 .6rem; }
+.customer-detail-meta { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem 1.25rem; color:var(--muted); overflow-wrap:anywhere; }
+.customer-detail-actions { display:flex; align-items:center; gap:.5rem; flex-shrink:0; }
+.customer-detail-columns { display:grid; grid-template-columns:minmax(0,1fr); border:1px solid var(--line); border-radius:14px; background:var(--surface); }
+.customer-detail-section { min-width:0; padding:1.25rem; border:1px solid var(--line); border-radius:14px; background:var(--surface); }
+.customer-detail-columns > .customer-detail-section { border:0; border-radius:0; background:transparent; }
+.customer-detail-columns > .customer-detail-section + .customer-detail-section { border-top:1px solid var(--line); }
+.customer-detail-notes-section { display:grid; grid-template-columns:7rem minmax(0,1fr); gap:0 1rem; align-items:baseline; }
+.customer-detail-notes-section h2 { margin:0; }
+.customer-detail-notes-section > .link-button { grid-column:2; justify-self:start; }
+.customer-detail-notes-section .customer-detail-notes { margin:0; max-width:80ch; }
+.customer-detail-fields.contact-fields { grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem 2rem; }
+.customer-detail-section h2 { margin:0 0 1rem; font-size:1.1rem; }
+.customer-detail-fields { display:grid; grid-template-columns:1fr; gap:1rem; margin:0; }
+.customer-detail-fields dt { color:var(--muted); margin-bottom:.25rem; }
+.customer-detail-fields dd { margin:0; overflow-wrap:anywhere; }
+.customer-detail-fields.contact-fields > div { display:grid; grid-template-columns:7rem minmax(0,1fr); gap:.5rem; align-items:baseline; }
+.customer-detail-fields.contact-fields dd { display:flex; flex-wrap:wrap; gap:.5rem; align-items:baseline; }
+.customer-detail-notes { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.65; margin:0 0 .5rem; }
+.customer-detail-notes.is-collapsed { display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; }
+.customer-copy-notice { color:var(--muted); font-size:.875rem; }
+.customer-copy-notice:empty { display:none; }
+.customer-detail-projects > header { display:flex; justify-content:space-between; align-items:center; gap:1rem; }
+.customer-detail-projects > header h2 { margin:0; }
+.customer-detail-filters { display:grid; grid-template-columns:minmax(0,26rem) minmax(10rem,13rem); gap:1rem; margin:1.25rem 0; align-items:end; }
+.customer-detail-filters label { display:grid; gap:.4rem; min-width:0; }
+.customer-detail-filters label > span:first-child { color:var(--muted); font-size:.8125rem; font-weight:500; }
+.customer-project-search-control { display:flex; align-items:center; gap:.625rem; height:44px; padding:0 .875rem; border:1px solid var(--line); border-radius:8px; background:var(--surface); }
+.customer-project-search-control > svg { flex:0 0 18px; width:18px; height:18px; color:var(--muted); }
+.customer-project-search-control:focus-within { border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 15%,transparent); }
+.app-shell .customer-detail-projects .customer-detail-filters .customer-project-search .customer-project-search-control input { width:100%; min-width:0; min-height:0; height:100%; padding:0; border:0; border-radius:0; outline:none; box-shadow:none; background:transparent; font:inherit; font-size:.9375rem; }
+.app-shell[data-theme="dark"] .customer-project-search-control { background:var(--sunk); }
+.customer-detail-filters .select-trigger { min-height:44px; height:44px; border-radius:8px; }
+.customer-project-table { overflow-x:auto; }
+.customer-project-table table { width:100%; }
+.customer-project-table td { vertical-align:top; }
+.customer-project-table small { display:block; margin-top:.3rem; color:var(--muted); }
+.customer-name-link { border:0; padding:0; background:transparent; color:var(--text); font:inherit; font-weight:600; text-align:left; cursor:pointer; overflow-wrap:anywhere; }
+.customer-name-link:hover { color:var(--accent); text-decoration:underline; }
+.customer-name-link:focus-visible { outline:2px solid var(--accent); outline-offset:4px; }
+.customer-detail-empty { padding:1.5rem 0; color:var(--muted); }
+/* Reserve the same list header in every selection state. */
+.customer-selection-actions { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:.75rem 1.5rem; width:100%; min-width:0; }
+.customer-selection-summary { min-width:0; }
+.customer-selection-title { display:flex; align-items:baseline; gap:.75rem; }
+.app-shell .work-panel > header .customer-selection-title strong { color:var(--text); font-size:1rem; font-weight:600; line-height:1.5; letter-spacing:normal; }
+.customer-selection-title > span { color:var(--muted); font-size:.8125rem; font-variant-numeric:tabular-nums; }
+.app-shell .work-panel > header .customer-selection-summary small { display:block; height:20px; margin:2px 0 0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; color:var(--muted); font-size:.8125rem; font-weight:400; line-height:20px; }
+.customer-selection-buttons,.customer-selection-exports { display:flex; align-items:center; gap:.5rem; }
+.customer-selection-exports { padding-right:.75rem; margin-right:.25rem; border-right:1px solid var(--line); }
+.app-shell .customer-selection-buttons > button,.app-shell .customer-selection-exports > button { min-height:36px; padding:.4rem .75rem; font-size:.875rem; line-height:1.5; font-weight:600; white-space:nowrap; box-shadow:none; }
+.app-shell .customer-selection-actions .customer-selection-buttons .customer-selection-delete { color:var(--bad); border-color:color-mix(in srgb,var(--bad) 35%,var(--line)); background:transparent; }
+.app-shell .customer-selection-actions .customer-selection-buttons .customer-selection-delete:hover:not(:disabled) { color:var(--bad); background:var(--bad-soft); border-color:var(--bad); }
+.app-shell .customer-selection-actions .customer-selection-buttons .customer-selection-clear { color:var(--muted); margin:0; text-decoration:none; }
+.app-shell .customer-selection-actions .customer-selection-buttons .customer-selection-clear:hover:not(:disabled) { color:var(--accent); background:var(--surface-2); }
+.customer-selection-actions button:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.app-shell .customer-selection-actions .customer-selection-buttons button:disabled { cursor:not-allowed; color:var(--muted); border-color:var(--line); background:transparent; opacity:.45; }
+@media(max-width:1250px) {
+  .customer-selection-actions { grid-template-columns:minmax(0,1fr); }
+}
+@media(max-width:1000px) {
+  .customer-selection-buttons { display:grid; grid-template-columns:1fr 1fr; width:100%; }
+  .customer-selection-exports { grid-column:1 / -1; border:0; margin:0; padding:0; width:100%; }
+  .customer-selection-exports > button { flex:1; }
+}
+/* Compact customer editing; validation, draft restoration and footer remain in place. */
+.app-shell .customer-edit-modal { --form-field-gap:6px; --customer-control-background:var(--surface); }
+.app-shell[data-theme="dark"] .customer-edit-modal { --customer-control-background:var(--sunk); }
+.app-shell .customer-edit-modal > header { padding:16px 24px; }
+.app-shell .customer-edit-modal > header h2 { margin:0; font-size:1.375rem; line-height:1.4; }
+.app-shell .customer-edit-modal > header p { margin:.375rem 0 0; color:var(--muted); font-size:.8125rem; line-height:1.5; }
+.app-shell .customer-edit-modal > .dialog-scroll-body { padding:16px 24px; }
+.app-shell .customer-edit-modal .local-draft-notice { margin:0 0 12px; padding:9px 12px; border-radius:8px; background:var(--surface-2); font-size:.75rem; line-height:1.5; }
+.app-shell .customer-edit-modal .modal-grid { padding:0; gap:14px 20px; }
+.app-shell .customer-edit-modal .modal-grid > label { gap:6px; }
+.app-shell .customer-edit-modal .modal-grid > label > span { color:var(--text); font-size:.8125rem; font-weight:500; line-height:1.5; }
+.app-shell .customer-edit-modal .modal-grid > label > span > small { font-size:.75rem; font-weight:400; }
+.app-shell .customer-edit-modal .modal-grid .customer-required-hint { position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.app-shell .customer-edit-modal.modal-card .modal-grid > label > input,.app-shell .customer-edit-modal.modal-card .modal-grid .select-trigger { min-height:44px; height:44px; padding:10px 12px; border-radius:8px; background:var(--customer-control-background); font-size:1rem; font-weight:400; }
+.app-shell .customer-edit-modal.modal-card .modal-grid > label > textarea { height:72px; min-height:72px; padding:10px 12px; border-radius:8px; background:var(--customer-control-background); font-size:.9375rem; }
+@media(max-width:700px) {
+  .app-shell .customer-edit-modal > header,.app-shell .customer-edit-modal > footer { padding:14px 18px; }
+  .app-shell .customer-edit-modal > .dialog-scroll-body { padding:16px 18px; }
+}
+.customer-batch-results { list-style:none; padding:0; margin:1rem 0; }
+.customer-batch-results li { display:flex; justify-content:space-between; gap:1rem; padding:.75rem 0; border-bottom:1px solid var(--line); overflow-wrap:anywhere; }
+.customer-batch-results small { display:block; color:var(--muted); }
+@media(max-width:700px) {
+  .customer-detail-columns,.customer-detail-filters { grid-template-columns:minmax(0,1fr); }
+  .customer-detail-columns > .customer-detail-section + .customer-detail-section { border-left:0; border-top:1px solid var(--line); }
+  .customer-detail-projects > header { flex-wrap:wrap; }
+  .customer-detail-actions { flex-wrap:wrap; }
+  .customer-detail-fields.contact-fields,.customer-detail-notes-section { grid-template-columns:1fr; }
+  .customer-detail-notes-section > .link-button { grid-column:1; }
+  .customer-detail-notes-section h2 { margin-bottom:.5rem; }
+  .customer-detail-fields.contact-fields > div { grid-template-columns:1fr; gap:0; }
+  .customer-project-table table { min-width:640px; }
+  .customer-batch-results li { flex-direction:column; gap:.25rem; }
+}
+
+/* Sales project overview: compact language rows, details opened on demand. */
+.sales-project-detail .sales-project-meta { display:flex; flex-wrap:wrap; gap:.75rem 1.5rem; align-items:center; padding:0 0 1rem; color:var(--muted); }
+.sales-project-brief.is-collapsed { display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; }
+.sales-compact-workflow { display:grid; }
+.sales-compact-language + .sales-compact-language { border-top:1px solid var(--line); }
+.sales-language-row { display:grid; grid-template-columns:minmax(8rem,1.2fr) minmax(5rem,.6fr) minmax(8rem,.8fr) minmax(10rem,1fr); gap:1rem; align-items:center; padding:1rem 0; }
+.sales-language-row > strong,.sales-language-row > span { overflow-wrap:anywhere; }
+.sales-language-actions { display:flex; justify-content:flex-end; align-items:center; gap:1rem; }
+.sales-language-expanded { min-width:0; }
+.sales-compact-language .sales-language-expanded { padding:1rem; background:var(--surface-2); border-radius:12px; margin-bottom:1rem; }
+@media(max-width:700px) { .sales-language-row { grid-template-columns:minmax(0,1fr) auto; gap:.5rem 1rem; } .sales-language-row > strong:empty { display:none; } .sales-language-row > strong:empty + span { grid-column:1 / -1; } .sales-language-actions { justify-content:flex-end; } }
+
+.sales-compact-workflow fieldset.sales-final-actions,
+.sales-workflow-list fieldset.sales-final-actions { border:0; margin:0; min-width:0; padding:0; }
+
+.sales-language-row > .status { justify-self:start; }
+.sales-language-columns { display:grid; grid-template-columns:minmax(8rem,1.2fr) minmax(5rem,.6fr) minmax(8rem,.8fr) minmax(10rem,1fr); gap:1rem; padding:.5rem 0; color:var(--muted); font-size:.85rem; border-bottom:1px solid var(--line); }
+.sales-language-columns > :last-child { text-align:right; }
+@media(max-width:700px) { .sales-language-columns { display:none; } }
+
+/* Sales menu refinement: list content only; existing filter controls are unchanged. */
+.sales-success-notice { position:fixed; z-index:120; right:1.5rem; bottom:1.5rem; display:flex; align-items:center; gap:1rem; max-width:calc(100vw - 3rem); padding:.85rem 1rem; border:1px solid var(--line); border-radius:12px; background:var(--surface); color:var(--text); box-shadow:0 8px 28px rgba(0,0,0,.14); }
+.sales-list-empty { margin:0; padding:2rem 1rem; text-align:center; color:var(--muted); }
+.app-shell[data-access="client"] .sales-project-list .project-grid { grid-template-columns:2rem minmax(12rem,1.5fr) minmax(9rem,1fr) minmax(7rem,.7fr) minmax(8rem,.8fr) minmax(9rem,.9fr) minmax(8.5rem,.8fr) 4rem; min-width:64rem; }
+.app-shell[data-access="client"] .sales-project-list .cell-client { display:block; overflow-wrap:anywhere; }
+.app-shell[data-access="client"] .sales-project-list .cell-priority { display:none; }
+@media(max-width:700px) {
+  .app-shell[data-access="client"] .sales-project-list .project-summary.project-grid { grid-template-columns:1.5rem minmax(0,1fr); min-width:0; }
+  .app-shell[data-access="client"] .sales-project-list .project-summary .cell-client { grid-column:2; }
+  .app-shell[data-access="client"] .work-panel .sales-customer-table { display:block; min-width:0; width:100%; }
+  .app-shell[data-access="client"] .work-panel .sales-customer-table thead { display:block; }
+  .app-shell[data-access="client"] .work-panel .sales-customer-table thead tr { display:block; }
+  .app-shell[data-access="client"] .work-panel .sales-customer-table th:not(.check-column) { display:none; }
+  .app-shell[data-access="client"] .work-panel .sales-customer-table .check-column { width:auto; min-width:0; }
+  .app-shell[data-access="client"] .work-panel .sales-customer-table tbody { display:grid; }
+  .app-shell[data-access="client"] .work-panel .sales-customer-table tbody tr { display:grid; grid-template-columns:1.5rem minmax(0,1fr); gap:.6rem .65rem; padding:1rem; border-bottom:1px solid var(--line); }
+  .app-shell[data-access="client"] .work-panel .sales-customer-table td { display:block; grid-column:2; min-width:0; width:auto; padding:0; border:0; white-space:normal; overflow-wrap:anywhere; }
+  .app-shell[data-access="client"] .work-panel .sales-customer-table td.check-column { grid-column:1; grid-row:1; }
+  .app-shell[data-access="client"] .work-panel .sales-customer-table .customer-identity-cell { grid-row:1; }
+  .app-shell[data-access="client"] .work-panel .sales-customer-table td[data-label]::before { content:attr(data-label); display:block; color:var(--muted); font-size:.8125rem; margin-bottom:.2rem; }
+  .app-shell[data-access="client"] .work-panel .sales-customer-table td small { white-space:normal; overflow-wrap:anywhere; }
+  .app-shell[data-access="client"] .work-panel .sales-customer-table .crm-row-actions { justify-content:flex-start; flex-wrap:wrap; margin-top:.35rem; }
+}
+.app-shell[data-access="client"] .work-panel .sales-customer-table { min-width:64rem; }
+@media(max-width:700px) { .app-shell[data-access="client"] .work-panel .sales-customer-table { min-width:0; } }

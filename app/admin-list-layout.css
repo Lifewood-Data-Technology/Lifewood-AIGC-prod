@@ -1,0 +1,50 @@
+/* Opted-in administrator lists only; dialogs and permission matrices keep their layouts. */
+.app-shell[data-access="system"] .admin-list-layout .admin-list-query-form {
+  display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center;
+  gap: 10px; min-width: 0; margin: 0;
+}
+.app-shell[data-access="system"] .admin-list-layout .admin-filter-field {
+  flex: 0 1 220px; min-width: 0; max-width: 100%; height: 44px;
+  margin: 0; border-radius: 6px; font-size: 13px;
+}
+.app-shell[data-access="system"] .admin-list-layout .admin-filter-field:focus-within {
+  border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.app-shell[data-access="system"] .admin-list-layout .admin-list-summary {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; min-width: 0;
+}
+.app-shell[data-access="system"] .admin-list-layout .admin-list-summary > span { overflow-wrap: anywhere; }
+.app-shell[data-access="system"] .admin-list-layout .admin-presence-filters {
+  display: flex; flex-wrap: wrap; gap: 8px; margin: 0; min-width: 0;
+}
+.app-shell[data-access="system"] .admin-list-layout .admin-presence-filters > button {
+  gap: 8px; min-width: 0; padding: 0 10px; background: var(--surface);
+}
+.app-shell[data-access="system"] .admin-list-layout .admin-presence-filters > button.selected {
+  border-color: var(--accent); background: var(--accent-soft);
+}
+.app-shell[data-access="system"] .admin-list-layout .admin-presence-filters .account-presence-badge {
+  padding: 0; border: 0; background: transparent; font-size: inherit;
+}
+.app-shell[data-access="system"] .admin-list-layout .admin-presence-filters strong { font-size: inherit; }
+.app-shell[data-access="system"] .admin-list-layout .data-list-pagination > .account-access-pagination {
+  margin: 0; padding: 0; border: 0; min-height: 0;
+}
+.app-shell[data-access="system"] .admin-list-layout .permission-list-summary {
+  max-width: 25rem; white-space: normal; overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .app-shell[data-access="system"] .admin-list-layout .page-search { flex-basis: 100%; width: 100%; }
+  .app-shell[data-access="system"] .admin-list-layout .admin-filter-field { flex: 1 1 200px; }
+  .app-shell[data-access="system"] .admin-list-layout .data-list-query-actions { flex: 1 1 100%; }
+  .app-shell[data-access="system"] .admin-list-layout .data-list-result-actions { flex-basis: 100%; margin-left: 0; }
+  .app-shell[data-access="system"] .admin-list-layout .admin-presence-filters { flex: 1; }
+  .app-shell[data-access="system"] .admin-list-layout .admin-presence-filters > button { flex: 1 1 calc(50% - 4px); }
+  .app-shell[data-access="system"] .admin-list-layout .admin-presence-filters .account-presence-badge {
+    flex: 1 1 auto; min-width: 0; white-space: normal; line-height: 1.2;
+  }
+  .app-shell[data-access="system"] .admin-list-layout .admin-presence-filters .account-presence-badge i,
+  .app-shell[data-access="system"] .admin-list-layout .admin-presence-filters strong { flex: none; }
+  .app-shell[data-access="system"] .admin-list-layout .account-access-pagination > span { flex-basis: 100%; }
+  .app-shell[data-access="system"] .admin-list-layout .admin-page-size { margin-right: auto; }
+}

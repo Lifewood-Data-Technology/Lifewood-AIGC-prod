@@ -1,0 +1,191 @@
+/* Shared list presentation across all five roles. Business content and controls
+   remain intact; wide records scroll inside their existing list containers. */
+.app-shell .main-content table {
+  border-collapse: collapse;
+  border-spacing: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.app-shell .main-content table :is(th, td) {
+  box-sizing: border-box;
+  height: 46px;
+  padding: 10px 12px;
+  vertical-align: middle;
+  text-align: left;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 1px solid var(--line-soft, var(--line));
+  font-size: 13px;
+  line-height: 20px;
+}
+.app-shell .main-content table th {
+  height: 42px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.app-shell .main-content table tbody tr:hover { background: var(--surface-2); }
+.app-shell .main-content table td :is(strong, a, button) { font-size: 13px; }
+.app-shell .main-content table td small { font-size: 12px; line-height: 18px; }
+.app-shell .main-content table td :is(button, .row-actions, .table-actions) { white-space: nowrap; }
+.app-shell .main-content table :is(.check-column, .selection-column) { width: 40px; min-width: 40px; text-align: center; }
+.app-shell .main-content :is(.work-table-wrap, .data-list-table, .admin-directory-table) { overflow-x: auto; max-width: 100%; }
+/* Preserve deliberately separate secondary metadata, but never split a name
+   or action into arbitrary lines to squeeze more columns into the viewport. */
+.app-shell .main-content table :is(.pm-project-name, .pm-customer-name) {
+  display: block;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  -webkit-line-clamp: unset;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.app-shell[data-access="system"] .admin-directory td > .admin-record-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.app-shell .main-content .admin-record-name svg { width: 16px; height: 16px; flex: none; }
+@media (max-width: 820px) {
+  .app-shell .main-content table :is(th, td) { padding: 9px 10px; }
+}
+.app-shell .main-content table td > :is(strong, small),
+.app-shell .main-content table .customer-name-link,
+.app-shell .main-content table .editor-task-title strong {
+  display: block;
+  max-width: 280px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
+}
+.app-shell .main-content table .customer-name-link { min-width: 0; }
+/* A list is one workspace: query row, action row, records and pagination. */
+.app-shell .main-content .delivery-record-table .delivery-file-name {
+  display: block;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-shell .main-content .data-list { border-radius: 4px; }
+.app-shell .main-content .data-list-toolbar { gap: 10px; padding: 14px 16px 0; }
+.app-shell .main-content .data-list-primary { gap: 10px; }
+.app-shell .main-content .data-list-summary { min-height: 44px; padding: 8px 16px; margin-inline: -16px; background: var(--surface); }
+.app-shell .main-content .data-list .data-list-pagination { min-height: 52px; padding: 10px 16px; }
+.app-shell .main-content .data-list :is(.data-list-toolbar,.data-list-pagination) :is(button,.select-trigger,.editor-select-trigger) { min-height: 32px; height: 32px; border-radius: 4px; font-size: 13px; }
+.app-shell .main-content .data-list .data-list-toolbar input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) { height: 32px; min-height: 32px; font-size: 13px; }
+.app-shell .main-content .data-list :is(.page-search,.pm-search,.team-search,.editor-search-control,.data-list-search-control,.data-list-field) { height: 34px; min-height: 34px; border-radius: 4px; }
+/* Administrator filters follow the prototype's label + outlined control layout. */
+.app-shell[data-access="system"] .admin-list-layout .data-list-primary { display: grid; grid-template-columns: minmax(0,1fr); }
+.app-shell[data-access="system"] .admin-list-layout .data-list-actions { margin-left: 0; }
+.app-shell[data-access="system"] .admin-list-layout .admin-list-query-form { gap: 12px 18px; }
+.app-shell[data-access="system"] .admin-list-layout .admin-filter-field { display:flex; align-items:center; gap:8px; flex:0 1 auto; width:auto; height:32px; padding:0; border:0; border-radius:0; background:none; box-shadow:none; }
+.app-shell[data-access="system"] .admin-list-layout .admin-filter-field > span { flex:none; white-space:nowrap; }
+.app-shell[data-access="system"] .admin-list-layout .admin-filter-field :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),select) { box-sizing:border-box; width:180px; max-width:100%; min-width:0; height:32px; min-height:32px; border:1px solid var(--line); border-radius:4px; padding:4px 9px; background:var(--surface); color:var(--text); font:inherit; }
+.app-shell[data-access="system"] .admin-list-layout .admin-filter-field input[type="date"] { width:155px; }
+@media(max-width:600px){.app-shell[data-access="system"] .admin-list-layout .admin-filter-field { flex:1 1 100%; }.app-shell[data-access="system"] .admin-list-layout .admin-filter-field > span { width:90px; }.app-shell[data-access="system"] .admin-list-layout .admin-filter-field :is(input,select) { flex:1; width:0; }}
+
+.app-shell .main-content .data-list { --query-control-height:34px; --query-font-size:13px; }
+.app-shell .main-content .admin-list-layout .account-access-pagination > span { margin-right:0; }
+/* Fixed-layout task cells must clip their own text, not paint into neighbours. */
+.app-shell .main-content .editor-project-cell > :is(.editor-project-name, small) {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Directory lists share the same query/action/footer geometry as DataList.
+   Dialog controls are intentionally outside these selectors. */
+.app-shell[data-access="system"] .admin-directory-sheet { padding: 14px 16px 0; border-radius: 4px; }
+.app-shell[data-access="system"] .admin-directory-sheet > .admin-directory-filters { gap: 12px 18px; margin: 0 0 10px; font-size: 13px; }
+.app-shell[data-access="system"] .admin-directory-filters label { gap: 8px; }
+.app-shell[data-access="system"] .admin-directory-filters :is(input,select) { width: 180px; height: 32px; min-height: 32px; background: var(--surface); font-size: 13px; }
+.app-shell[data-access="system"] .admin-directory-sheet > .admin-directory-tools { gap: 10px; margin: 0 0 10px; }
+.app-shell[data-access="system"] .admin-directory-sheet > :is(.admin-directory-tools,.admin-directory-filters,.admin-directory-pagination) button { height: 32px; min-height: 32px; border-radius: 4px; font-size: 13px; }
+.app-shell[data-access="system"] .admin-directory-pagination { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 10px; min-height: 52px; padding: 10px 0; font-size: 13px; }
+.app-shell[data-access="system"] .admin-directory-pagination select { height: 32px; font-size: 13px; }
+.app-shell[data-access="system"] .admin-directory-pagination button { padding: 4px 10px; border: 1px solid var(--line); color: var(--accent); background: var(--surface); }
+.app-shell[data-access="system"] .admin-directory-pagination button:disabled { opacity: .45; cursor: not-allowed; }
+@media(max-width:600px){
+ .app-shell[data-access="system"] .admin-directory-filters label { display: grid; grid-template-columns: 90px minmax(0,1fr); width: 100%; }
+ .app-shell[data-access="system"] .admin-directory-filters :is(input,select) { width: 100%; }
+}
+
+/* Recycle metadata must not displace the restore action with unbroken paths. */
+.app-shell .main-content .recycle-record-table .recycle-cell-text {
+  display: block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-shell .main-content .recycle-record-table td:first-child strong { max-width: 200px; }
+.app-shell .main-content .recycle-record-table td:nth-child(3) .recycle-cell-text,
+.app-shell .main-content .recycle-record-table td:nth-child(3) small,
+.app-shell .main-content .recycle-record-table td:nth-child(5) .recycle-cell-text { max-width: 160px; }
+.app-shell .main-content .recycle-record-table td:nth-child(4) .recycle-cell-text { max-width: 180px; }
+
+/* Directory names keep their tree controls visible without widening every column. */
+.app-shell[data-access="system"] .admin-directory td > .admin-record-name { max-width: 300px; box-sizing: border-box; }
+.app-shell[data-access="system"] .admin-record-name > button { flex: none; }
+.app-shell[data-access="system"] .admin-record-label,
+.app-shell[data-access="system"] .admin-record-code { display: block; min-width: 0; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-shell[data-access="system"] .admin-directory-table:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Administrator list baseline, shared by account, directory and audit screens. */
+.app-shell[data-access="system"] .main-content :is(.data-list,.admin-directory-sheet) {
+  border:1px solid var(--line); border-radius:4px; box-shadow:none; background:var(--surface);
+}
+.app-shell[data-access="system"] .main-content .data-list-body { padding:0 16px; }
+.app-shell[data-access="system"] .main-content :is(.data-list,.admin-directory) table :is(th,td) {
+  height:46px; padding:8px 12px; vertical-align:middle; line-height:20px;
+  font-size:13px; border-bottom:1px solid var(--line-soft); border-top:0;
+}
+.app-shell[data-access="system"] .main-content :is(.data-list,.admin-directory) table th {
+  height:42px; color:var(--muted); font-weight:600; background:var(--surface-2);
+}
+.app-shell[data-access="system"] .main-content :is(.data-list,.admin-directory) table td[colspan] {
+  height:140px; text-align:center; color:var(--muted); white-space:normal;
+}
+.app-shell[data-access="system"] .main-content :is(.data-list,.admin-directory) table td :is(.link-button,.row-action,.row-menu-trigger) {
+  min-height:28px; height:auto; padding:4px 6px; border-radius:4px; font-size:13px; line-height:20px; font-weight:500;
+}
+.app-shell[data-access="system"] .main-content :is(.data-list,.admin-directory) table td :is(.link-button,.row-action,.row-menu-trigger):hover { background:var(--accent-soft); }
+.app-shell[data-access="system"] .main-content :is(.data-list-pagination,.admin-directory-pagination) { min-height:56px; padding:12px 16px; gap:8px; border-top:0; }
+.app-shell[data-access="system"] .main-content :is(.data-list-pagination,.admin-directory-pagination) :is(button,select,.select-trigger) {
+  height:30px; min-height:30px; border:1px solid var(--line); border-radius:4px; background:var(--surface); color:var(--text); font-size:12px; padding:4px 10px;
+}
+.app-shell[data-access="system"] .main-content :is(.data-list-toolbar,.admin-directory-tools,.admin-directory-filters) button {
+  height:32px; min-height:32px; padding:5px 12px; border-radius:4px; font-size:13px; font-weight:500; box-shadow:none;
+}
+.app-shell[data-access="system"] .admin-directory-filters input:not([type="date"]) { width:150px; }
+.app-shell[data-access="system"] .admin-directory-filters select { width:110px; }
+.app-shell[data-access="system"] .admin-directory-filters { column-gap:14px; }
+.app-shell[data-access="system"] .admin-list-layout .admin-filter-field .select-control { width:150px; flex:none; }
+.app-shell[data-access="system"] .admin-list-layout .admin-filter-field .select-trigger { border:1px solid var(--line); background:var(--surface); padding:4px 9px; }
+.app-shell[data-access="system"] .employee-accounts-panel .data-list-primary { display:grid; grid-template-columns:minmax(0,1fr); }
+.app-shell[data-access="system"] .employee-accounts-panel .data-list-actions { margin-left:0; }
+.app-shell[data-access="system"] .employee-accounts-panel .data-list-query { display:flex; flex-wrap:wrap; gap:12px; }
+.app-shell[data-access="system"] .employee-accounts-panel .data-list-query > .data-list-search { flex:0 1 280px; }
+.app-shell[data-access="system"] .employee-accounts-panel .data-list-query > .data-list-filters { flex:1; }
+.app-shell[data-access="system"] .employee-accounts-panel .admin-filters { display:flex; align-items:center; flex-wrap:wrap; gap:12px; padding:0; margin:0; border:0; background:none; }
+.app-shell[data-access="system"] .employee-accounts-panel .admin-filter-fields { display:flex; flex:0 0 auto; flex-wrap:nowrap; width:auto; align-items:center; gap:12px; }
+.app-shell[data-access="system"] .employee-accounts-panel .admin-filter-footer { margin:0; padding:0; border:0; }
+.app-shell[data-access="system"] .employee-accounts-panel .admin-filter-field { flex:0 0 170px; width:170px; height:32px; border-radius:4px; min-width:0; font-size:13px; }
+.app-shell[data-access="system"] .employee-accounts-panel .admin-filter-field .select-trigger { height:30px; min-height:30px; }
+@media(max-width:700px){
+ .app-shell[data-access="system"] .main-content .data-list-body { padding:0 12px; }
+ .app-shell[data-access="system"] .employee-accounts-panel .data-list-query > :is(.data-list-search,.data-list-filters) { flex:1 1 100%; }
+ .app-shell[data-access="system"] .employee-accounts-panel .admin-filter-fields { flex-wrap:wrap; width:100%; }
+ .app-shell[data-access="system"] .employee-accounts-panel .admin-filter-field { flex:1 1 140px; }
+ .app-shell[data-access="system"] .admin-directory-filters input:not([type="date"]),
+ .app-shell[data-access="system"] .admin-directory-filters select { width:100%; }
+}

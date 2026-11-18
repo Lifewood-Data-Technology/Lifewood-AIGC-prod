@@ -1,0 +1,333 @@
+/* All dialog shells have stable geometry; only their middle region scrolls. */
+:is(.modal-card, .account-access-dialog):has(> .dialog-scroll-body),
+.app-shell :is(.modal-card, .account-access-dialog):has(> .dialog-scroll-body) {
+  --dialog-width: 760px;
+  --dialog-height: 680px;
+  box-sizing: border-box;
+  width: min(var(--dialog-width), calc(100vw - 32px));
+  height: min(var(--dialog-height), calc(100dvh - 40px));
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 40px);
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  flex-direction: column;
+}
+.modal-backdrop > .modal-card:has(> .dialog-scroll-body),
+dialog[open]:has(> .dialog-scroll-body),
+.app-shell dialog[open]:has(> .dialog-scroll-body) { display: flex; }
+dialog:not([open]) { display: none; }
+:is(.modal-card, .account-access-dialog):has(> .dialog-scroll-body) > :is(header, footer, [data-dialog-footer], [data-dialog-toolbar]) { flex: 0 0 auto; min-width: 0; }
+:is(.modal-card, .account-access-dialog):has(> .dialog-scroll-body) > header {
+  box-sizing: border-box; margin: 0; padding: 18px 24px; max-height: 150px;
+  overflow: auto; background: var(--surface); border-bottom: 1px solid var(--line);
+}
+:is(.modal-card, .account-access-dialog):has(> .dialog-scroll-body) > header :is(h2, p, small) { overflow-wrap: anywhere; }
+.app-shell .modal-card:has(> .dialog-scroll-body) > header > button,
+.modal-card:has(> .dialog-scroll-body) > header > button {
+  flex: 0 0 auto; width: auto; height: auto; min-width: 40px; min-height: 40px;
+  padding: 8px 12px; white-space: nowrap; font-size: 1rem;
+}
+.dialog-scroll-body {
+  flex: 1 1 0%; min-height: 0; min-width: 0; overflow: auto;
+  overscroll-behavior: contain; scrollbar-gutter: stable; overflow-wrap: anywhere;
+}
+.dialog-scroll-body > :is(.account-access-dialog-body, .task-file-picker-grid, .asset-preview-dialog-body, .request-detail-body) { max-height: none; overflow: visible; }
+.dialog-scroll-body :is(input, textarea, select, img, video, audio, iframe) { max-width: 100%; box-sizing: border-box; }
+.dialog-scroll-body :is(img, video) { object-fit: contain; }
+:is(.modal-card, .account-access-dialog):has(> .dialog-scroll-body) > :is(footer, [data-dialog-footer]) {
+  box-sizing: border-box; margin: 0; padding: 14px 24px; background: var(--surface);
+  border-top: 1px solid var(--line); max-height: 150px; overflow: auto;
+}
+:is(.modal-card, .account-access-dialog):has(> .dialog-scroll-body) > [data-dialog-toolbar] {
+  padding: 14px 24px; border-bottom: 1px solid var(--line); max-height: 38%; overflow: auto;
+}
+.app-shell :is(.production-workspace-modal, .task-file-picker, .file-preview-dialog, .request-detail-modal, .customer-intake-modal, .sales-project-modal, .video-create-modal, .name-review-dialog):has(> .dialog-scroll-body),
+:is(.production-workspace-modal, .task-file-picker, .file-preview-dialog, .request-detail-modal, .customer-intake-modal, .sales-project-modal, .video-create-modal, .name-review-dialog):has(> .dialog-scroll-body) { --dialog-width: 1060px; --dialog-height: 780px; }
+.app-shell .account-access-dialog:has(> .dialog-scroll-body),
+.account-access-dialog:has(> .dialog-scroll-body) { --dialog-width: 1060px; --dialog-height: 760px; }
+.app-shell :is(.operation-dialog, .compact-account-modal, .business-delete-dialog):has(> .dialog-scroll-body),
+:is(.operation-dialog, .compact-account-modal, .business-delete-dialog):has(> .dialog-scroll-body) { --dialog-width: 640px; --dialog-height: 440px; }
+.app-shell .sales-upload-dialog:has(> .dialog-scroll-body),
+.sales-upload-dialog:has(> .dialog-scroll-body) { --dialog-width: 760px; --dialog-height: 680px; }
+.production-workspace-modal > .dialog-scroll-body, .operation-dialog > .dialog-scroll-body { padding: 20px 24px; }
+.production-workspace-modal .production-tabs { margin: 0; gap: 8px; }
+.production-workspace-modal .production-tabs button[aria-pressed=true] { outline: none; background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.production-workspace-modal .production-source-tabs { padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.production-workspace-modal .production-source-tabs button { font-weight: 700; }
+.production-workspace-modal .production-category-tabs { margin-top: 10px; }
+.production-workspace-modal .production-category-tabs button { padding: 5px 10px; font-size: .875rem; }
+.production-file-toolbar { overflow: hidden !important; }
+.production-file-toolbar :is(.production-source-tabs, .production-category-tabs) {
+  flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin;
+}
+/* Conditional filter rows keep their space so switching source/category never
+   moves the search field, result viewport, or fixed pager. */
+.production-toolbar-slot { box-sizing: border-box; min-width: 0; overflow: hidden; }
+.production-toolbar-slot--category { height: 42px; }
+.production-toolbar-slot--search { height: 62px; overflow:visible; }
+.production-toolbar-slot > .production-category-tabs { height: 32px; }
+.production-file-scope { display:flex; align-items:center; height:32px; color:var(--muted); font-size:.875rem; }
+.production-file-scope strong { margin-left:4px; color:var(--text); }
+.production-category-drilldown>button:first-child { color:var(--muted); border-style:dashed; }
+.production-category-drilldown>button:first-child::before { content:"←"; margin-right:5px; }
+.production-search-toolbar { display:flex; align-items:center; gap:16px; height:44px; margin-top:10px; }
+.production-search-toolbar > input { flex:1; min-width:0; height:42px; min-height:42px; padding:0 13px; border:1px solid var(--line); border-radius:8px; background:var(--surface); box-shadow:none; }
+.production-search-toolbar > input:focus { outline:0; border-color:var(--accent); box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 12%,transparent); }
+.production-search-toolbar > label { flex: 0 0 auto; white-space: nowrap; font-size: .875rem; }
+/* Picker has an additional labelled stage filter: never squeeze it into the
+   fixed-height search row used by the file browser. */
+.production-workspace-modal > .production-search-toolbar[data-dialog-toolbar] {
+  display: grid; grid-template-columns: minmax(180px, 1fr) auto minmax(180px, 230px);
+  align-items: end; gap: 16px; height: auto; min-height: 88px;
+  margin: 0; box-sizing: border-box;
+}
+.production-workspace-modal > .production-search-toolbar[data-dialog-toolbar] > label {
+  display: grid; gap: 6px; min-width: 0; white-space: normal;
+}
+.production-workspace-modal > .production-search-toolbar[data-dialog-toolbar] > label:has(input[type=checkbox]) {
+  display: flex; align-items: center; min-height: 42px;
+}
+.production-workspace-modal > .production-search-toolbar[data-dialog-toolbar] select {
+  width: 100%; min-height: 42px; margin: 0; box-sizing: border-box;
+}
+.production-workspace-modal .editor-final-file-actions { display: flex; flex-wrap: wrap; gap: 16px; }
+.production-workspace-modal .editor-upload-zone .production-file-actions > label input[type=file] { margin: 0; }
+@media (max-width: 760px) {
+  .production-workspace-modal > .production-search-toolbar[data-dialog-toolbar] { grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
+  .production-workspace-modal > .production-search-toolbar[data-dialog-toolbar] > input { grid-column: 1 / -1; }
+}
+.production-history-control-slot { display: flex; align-items: center; flex: 0 0 184px; min-width: 184px; }
+.production-history-control-slot > label { white-space: nowrap; font-size: .875rem; }
+.production-empty { display: grid; place-content: center; min-height: 180px; text-align: center; color: var(--muted); }
+.production-workspace-modal:not(.editor-prototype-drawer) .production-file-grid { grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px; }
+.production-workspace-modal:not(.editor-prototype-drawer) .production-file-card { padding:10px; gap:8px; border-radius:10px; background:var(--surface); box-shadow:0 1px 2px rgb(0 0 0 / 3%); }
+.production-workspace-modal:not(.editor-prototype-drawer) .production-file-card:hover { border-color:color-mix(in srgb,var(--accent) 35%,var(--line)); box-shadow:0 8px 20px rgb(0 0 0 / 7%); }
+.production-workspace-modal:not(.editor-prototype-drawer) .production-file-cover { height:auto; aspect-ratio:16/9; border-radius:7px; }
+.production-workspace-modal:not(.editor-prototype-drawer) .production-file-card strong { min-height:2.8em; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+.production-workspace-modal:not(.editor-prototype-drawer) .production-file-actions { margin-top:auto; }
+.production-workspace-modal:not(.editor-prototype-drawer) .production-file-actions :is(button,a) { flex:1; text-align:center; justify-content:center; padding:7px 10px; border-radius:7px; }
+.production-pager > span { text-align: center; }
+.production-workspace-modal .production-media { min-height: 0; }
+.production-workspace-modal .production-media :is(img, video) { max-height: 100%; }
+html:has(dialog[open]), body:has(dialog[open]),
+html:has(.modal-backdrop), body:has(.modal-backdrop) { overflow: hidden; }
+
+/* The task-files window keeps a visible shell and clear internal regions. */
+.app-shell dialog.production-workspace-modal[open]:not(.editor-prototype-drawer) {
+  border:1px solid color-mix(in srgb,var(--line) 88%,var(--text));
+  border-radius:16px;
+  background:var(--surface);
+  box-shadow:0 22px 64px rgb(8 28 21 / 24%);
+}
+.production-workspace-modal:not(.editor-prototype-drawer)>header { border-bottom-color:var(--line); }
+.production-workspace-modal:not(.editor-prototype-drawer)>[data-dialog-toolbar] { background:color-mix(in srgb,var(--surface-2) 42%,var(--surface)); border-bottom-color:var(--line); }
+.production-workspace-modal:not(.editor-prototype-drawer)>.dialog-scroll-body { background:var(--surface); }
+.production-workspace-modal:not(.editor-prototype-drawer)>[data-dialog-footer] { border-top-color:var(--line); }
+.production-workspace-modal:not(.editor-prototype-drawer) .production-search-toolbar>input { border:1px solid var(--line); background:var(--surface); }
+
+@media (max-width: 600px) {
+  :is(.modal-card, .account-access-dialog):has(> .dialog-scroll-body) > :is(header, footer, [data-dialog-footer], [data-dialog-toolbar]),
+  .production-workspace-modal > .dialog-scroll-body, .operation-dialog > .dialog-scroll-body { padding: 12px 16px; }
+  .production-search-toolbar { flex-wrap: wrap; gap: 8px; }
+  .production-search-toolbar > input { flex-basis: 100%; }
+  .production-toolbar-slot--search { height: 98px; }
+  .production-history-control-slot { flex-basis: 100%; min-width: 0; }
+}
+
+/* Keep credential fields and immediate copy feedback visible together. */
+.app-shell .temporary-credential-modal:has(> .dialog-scroll-body) { --dialog-height: 500px; }
+@media (max-width: 480px) {
+  .app-shell .temporary-credential-modal:has(> .dialog-scroll-body) { --dialog-height: 620px; }
+  .app-shell .temporary-credential-modal > footer { flex-direction: row; }
+  .app-shell .temporary-credential-modal > footer > .primary-button { flex: 0 0 auto; width: 100%; }
+}
+
+.app-shell .account-password-reset-modal:has(> .dialog-scroll-body) { --dialog-height: 540px; }
+.account-password-reset-body { display: grid; gap: 18px; padding: 20px 24px; }
+.password-reset-inputs { display: grid; gap: 14px; }
+.password-reset-inputs label { display: grid; gap: 8px; }
+.password-reset-inputs input { width: 100%; min-height: 44px; padding: 10px 44px 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--text); }
+.account-password-reset-body p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.account-password-reset-body .password-reset-consequence { padding: 12px; border-radius: 8px; color: var(--warn); background: var(--warn-soft); }
+@media (max-width: 480px) {
+  .account-password-reset-body { padding: 16px; }
+  .app-shell .account-password-reset-modal .password-reset-footer-actions > button { flex: 1 1 0; }
+}
+
+.app-shell .account-password-reset-modal:has(> .dialog-scroll-body) > footer { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; max-height: 220px; }
+.account-password-reset-modal .password-reset-footer-actions { display: flex; justify-content: flex-end; gap: 12px; }
+.account-password-reset-modal .password-reset-footer-actions > button { flex: 0 0 auto; }
+.account-password-reset-modal footer .account-modal-error { margin: 0; }
+.account-password-reset-modal .password-visibility-button { color: var(--accent); }
+@media (max-width: 480px) {
+  .app-shell .account-password-reset-modal:has(> .dialog-scroll-body) { --dialog-height: 620px; }
+}
+
+.app-shell .account-permission-dialog:has(> .dialog-scroll-body),
+.account-permission-dialog:has(> .dialog-scroll-body) { --dialog-width: 760px; --dialog-height: 780px; }
+.account-permission-dialog .account-access-dialog-body { overflow: visible; }
+.app-shell .account-permission-dialog:has(> .dialog-scroll-body) > footer {
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px;
+  max-height: min(320px, 45dvh); overflow-x: hidden;
+}
+.permission-footer-actions { display: flex; justify-content: flex-end; gap: 12px; min-width: 0; }
+.permission-footer-actions > button { flex: 0 0 auto; }
+@media (max-width: 600px) {
+  .permission-footer-actions > button { flex: 1 1 0; min-width: 0; white-space: normal; }
+}
+
+/* Short account and standard-detail dialogs size to their content. */
+.app-shell :is(.account-create-modal, .standard-detail-modal):has(> .dialog-scroll-body) {
+  height: fit-content;
+  max-height: calc(100dvh - 40px);
+  border-radius: 6px;
+}
+:is(.account-create-modal, .standard-detail-modal) > .dialog-scroll-body { flex: 0 1 auto; }
+
+/* Short outcomes and confirmations size to content; workspaces retain their geometry. */
+.app-shell :is(.compact-message-dialog, .business-delete-dialog):has(> .dialog-scroll-body),
+:is(.compact-message-dialog, .business-delete-dialog):has(> .dialog-scroll-body) {
+  height: fit-content; max-height: calc(100dvh - 40px); --dialog-width: 560px;
+}
+:is(.compact-message-dialog, .business-delete-dialog) > .dialog-scroll-body { flex: 0 1 auto; }
+.operation-dialog > .dialog-scroll-body > p { margin: 0; line-height: 1.65; }
+.app-shell .modal-card > footer > button { flex: 0 0 auto; min-height: 44px; height: auto; }
+.app-shell .operation-notice {
+  position: fixed; z-index: 1200; inset: auto 24px 24px auto;
+  display: flex; align-items: flex-start; gap: 16px;
+  width: max-content; max-width: min(480px, calc(100vw - 32px));
+  padding: 16px 20px; border: 1px solid var(--line); border-radius: 12px;
+  color: var(--text); background: var(--surface); box-shadow: 0 8px 32px rgb(0 0 0 / .16);
+}
+.operation-notice > span { min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; max-height: 35dvh; overflow: auto; }
+.app-shell .operation-notice > button { flex: 0 0 auto; min-width: 32px; min-height: 32px; padding: 0; background: transparent; color: var(--muted); border: 0; font-size: 24px; }
+@media (max-width: 600px) {
+  .app-shell .operation-dialog.modal-card > header { padding: 16px; }
+  .app-shell .operation-dialog.modal-card > footer { padding: 12px 16px; }
+  .app-shell .modal-card > footer > button { flex: 0 0 auto; width: 100%; }
+  .app-shell .operation-notice { inset: auto 16px 16px; width: auto; padding: 14px 16px; }
+}
+
+/* Fit media into the existing dialog body, never resize the dialog shell. */
+.production-workspace-modal > .dialog-scroll-body:has(> .production-media),
+.file-preview-dialog > .dialog-scroll-body:has(.windows-file-preview.has-media) {
+  display: flex;
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+.production-workspace-modal .dialog-scroll-body > .production-media {
+  flex: 1 1 0%;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 16px;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 12px;
+}
+.production-workspace-modal .dialog-scroll-body .production-media > :is(img, video) {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  min-height: 0;
+  aspect-ratio: auto;
+  object-fit: contain;
+  place-self: center;
+}
+.file-preview-dialog .dialog-scroll-body > .asset-preview-dialog-body:has(.has-media) {
+  flex: 1 1 0%;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  overflow: hidden;
+}
+.file-preview-dialog .asset-preview-dialog-body .windows-file-preview.has-media {
+  flex: 1 1 0%;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.file-preview-dialog .asset-preview-dialog-body .windows-file-preview.has-media :is(img, video) {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: auto;
+  object-fit: contain;
+}
+
+/* Sales/quality task files render ExplorerFilePreview directly in the body. */
+.production-workspace-modal > .dialog-scroll-body:has(> .windows-file-preview.has-media) {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 12px;
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+.production-workspace-modal > .dialog-scroll-body > .windows-file-preview.has-media {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  max-height: 100%;
+  padding: 0;
+  overflow: hidden;
+}
+.production-workspace-modal > .dialog-scroll-body > .windows-file-preview.has-media :is(img, video) {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: auto;
+  object-fit: contain;
+}
+.production-workspace-modal > .dialog-scroll-body:has(> .windows-file-preview.has-media) > a {
+  justify-self: center;
+}
+
+/* Image letterboxing belongs to the dialog surface, not the video player. */
+:is(.production-workspace-modal, .file-preview-dialog) .windows-file-preview.has-media:has(> img),
+.file-preview-dialog .asset-preview-dialog-body:has(.windows-file-preview > img) {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+/* Task-file preview: quiet filename, grouped actions, evenly inset media. */
+.task-media-preview > header { display: flex; align-items: center; gap: 20px; }
+.task-media-preview > header > div:first-child { flex: 1 1 0%; min-width: 0; }
+.app-shell .task-media-preview > header h2,
+.task-media-preview > header h2 {
+  font-size: 18px; font-weight: 600; line-height: 1.5;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.task-preview-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.task-preview-actions > :is(a, button) { min-height: 40px; padding: 8px 14px; white-space: nowrap; }
+.task-media-preview > .dialog-scroll-body:has(> .windows-file-preview.has-media) {
+  grid-template-rows: minmax(0, 1fr); padding: 24px;
+}
+.task-media-preview .windows-file-preview > img {
+  border-radius: 6px; outline: 1px solid color-mix(in srgb, var(--line) 55%, transparent); outline-offset: -1px;
+}
+@media (max-width: 600px) {
+  .task-media-preview > header { flex-wrap: wrap; gap: 10px; }
+  .task-media-preview > header > div:first-child { flex-basis: 100%; }
+  .task-preview-actions { margin-left: auto; }
+  .task-media-preview > .dialog-scroll-body:has(> .windows-file-preview.has-media) { padding: 16px; }
+}
+.task-media-preview > .dialog-scroll-body > .windows-file-preview.has-media { margin: 0; }

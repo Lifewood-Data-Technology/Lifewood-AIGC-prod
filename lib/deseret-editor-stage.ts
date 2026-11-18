@@ -1,0 +1,31 @@
+import type { DeseretStage } from "./deseret-workspace";
+
+const stages: Record<DeseretStage, [string, string]> = {
+  intake: ["制作准备", "Production preparation"],
+  production: ["分镜制作", "Scene production"],
+  storyboard_review: ["出版社审核分镜", "Publisher scene review"],
+  revision: ["等待项目负责人分派返修。", "Waiting for the project lead to assign revisions."],
+  final_production: ["成片制作", "Final production"],
+  final_review: ["出版社审核成片", "Publisher final review"],
+  delivery: ["交付", "Delivery"],
+  archived: ["已归档", "Archived"],
+};
+
+export function editorStageLabel(stage: string | undefined, locale: "zh" | "en") {
+  const labels = stage && Object.hasOwn(stages, stage) ? stages[stage as DeseretStage] : undefined;
+  return labels?.[locale === "zh" ? 0 : 1] ?? (locale === "zh" ? "阶段待核对" : "Stage unavailable");
+}
+
+export type EditorProductionPhase = {stage: string; intake?: string; materials?: string};
+
+export function isDeseretSubmissionOpen(phase?: EditorProductionPhase) {
+  if (!phase || (phase.intake !== undefined && phase.intake !== "accepted") ||
+      (phase.materials !== undefined && phase.materials !== "ready")) return false;
+  return phase.stage === "production" || phase.stage === "final_production";
+}
+
+export function editorUploadLabel(stage: string | undefined, locale: "zh" | "en", replacing = false) {
+  if (stage === "production") return locale === "zh" ? (replacing ? "替换待审分镜" : "上传分镜送审") : (replacing ? "Replace pending scene" : "Submit scene for QC");
+  if (stage === "final_production") return locale === "zh" ? (replacing ? "替换待审成片" : "上传成片送审") : (replacing ? "Replace pending final" : "Submit final for QC");
+  return locale === "zh" ? "提交制作视频" : "Submit production video";
+}
