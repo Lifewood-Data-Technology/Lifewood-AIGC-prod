@@ -3,7 +3,8 @@ import { useEffect, useId, useRef, useState } from "react";
 import { progressEditableStatuses } from "../lib/task-file-access";
 import { workspaceFetch } from "../lib/tab-session";
 import { isStoryboardFileVersion, scopeDeseretReview, type DeseretScene, type DeseretStage, type DeseretWorkspace } from "../lib/deseret-workspace";
-import DeseretProducerBrief from "./DeseretProducerBrief";
+import { approvedSceneCharacters } from "../lib/deseret-producer-brief";
+import DeseretProducerBrief, { DeseretBriefFiles } from "./DeseretProducerBrief";
 import SelectControl from "./SelectControl";
 import { MenuIcon } from "./MenuIcon";
 import { LogIcon } from "./AdminLogControls";
@@ -171,7 +172,7 @@ function DeseretProductionState({
   const [data, setData] = useState<DeseretWorkspace>();
   const [unavailable, setUnavailable] = useState(false);
   const [error, setError] = useState(false);
-  const [commandError, setCommandError] = useState(false);
+  const [commandError, setCommandError] = useState<"unknown" | "character" | null>(null);
   const [busy, setBusy] = useState(false);
   const [reload, setReload] = useState(0);
   const [note, setNote] = useState("");
@@ -259,7 +260,7 @@ function DeseretProductionState({
         },
       };
     setBusy(true);
-    setCommandError(false);
+    setCommandError(null);
     try {
       const response = await workspaceFetch(endpoint, {
         method: "POST",
@@ -270,6 +271,10 @@ function DeseretProductionState({
         if (response.status === 401 || response.status === 403) {
           setData(undefined);
           setError(true);
+        }
+        if (response.status === 422) {
+          const failure = await response.json().catch(() => ({}));
+          if (failure.code === "DESERET_SCENE_CHARACTER_INVALID") throw new Error("Invalid scene character");
         }
         if (response.status === 409) {
           const failure: { code?: string } = await response
@@ -290,8 +295,8 @@ function DeseretProductionState({
         pendingRequest.current = undefined;
         setNote("");
       }
-    } catch {
-      if (generation.current === current) setCommandError(true);
+    } catch (error) {
+      if (generation.current === current) setCommandError(error instanceof Error && error.message === "Invalid scene character" ? "character" : "unknown");
       throw new Error("Unconfirmed");
     } finally {
       if (generation.current === current) setBusy(false);
@@ -342,27 +347,31 @@ function DeseretProductionState({
         ? (zh ? `尚有 ${unapprovedScenes.length} 个分镜缺少就绪且通过质检的视频版本。` : `${unapprovedScenes.length} scene(s) still need a ready, quality-approved video version.`)
         : "";
   return (
-    <section className="deseret-production-panel">
-      <header>
-        <h3>{c.title}</h3>
+    <section className="deseret-production-panel" data-role={data.role}>
+      <header className="deseret-project-heading">
+        <h3><MenuIcon name="projects" />{c.title}</h3>
         <span>
           {status(data.stage)} · {zh ? `资料第 ${data.submissionVersion} 版` : `Brief version ${data.submissionVersion}`}
         </span>
       </header>
-      {commandError && <p role="alert">{zh ? "操作尚未确认，请核对当前状态后重试。" : "The action was not confirmed. Check the current status and retry."}</p>}
+      {commandError && <p role="alert">{commandError === "character"
+        ? (zh ? "镜头中的人物与已批准资料不一致。请重新选择出场人物并保存镜头。" : "The scene cast differs from the approved brief. Select the characters again and save the scene.")
+        : (zh ? "操作尚未确认，请核对当前状态后重试。" : "The action was not confirmed. Check the current status and retry.")}</p>}
       <dl className="deseret-production-facts">
-        {(data.role === "lead" || data.intake !== "accepted") && <div><dt>{c.intake}</dt><dd>{status(data.intake)}</dd></div>}
-        <div><dt>{c.materials}</dt><dd>{data.materialManifest.length ? status(data.materials) : zh ? "本版无附件" : "No attachments in this version"}</dd></div>
+        {(data.role === "lead" || data.intake !== "accepted") && <div data-status={data.intake}><dt>{c.intake}</dt><dd>{status(data.intake)}</dd></div>}
+        <div data-status={data.materials}><dt>{c.materials}</dt><dd>{data.materialManifest.length ? status(data.materials) : zh ? "本版无附件" : "No attachments in this version"}</dd></div>
       </dl>
       {data.supplementNote && <blockquote>{data.supplementNote}</blockquote>}
-      <DeseretProducerBrief brief={data.brief} files={data.materialManifest} locale={locale} />
+      <div className="deseret-brief-layout">
+      <DeseretProducerBrief brief={data.brief} files={data.materialManifest} locale={locale} leadView={data.role === "lead"} />
+      <div className="deseret-work-items">
       {data.role === "lead" && (
         <>
           {can("intake.requestSupplement") && (
             <details className="deseret-supplement">
               <summary>{c.supplement}</summary>
               <label>{c.note}
-                <textarea rows={2} maxLength={2000} value={note} onChange={event => setNote(event.target.value)} />
+                <textarea rows={2} maxLength={2000} placeholder={zh ? "例如，请补充封底原图，保留完整的书脊和边缘。" : "For example, please send the original back cover with the spine and edges visible."} value={note} onChange={event => setNote(event.target.value)} />
               </label>
               <ActionButton label={c.supplement} busy={busy} reason={!note.trim() ? (zh ? "请填写需要出版社补充的资料。" : "Specify what the publisher needs to provide.") : undefined}
                 onClick={() => void command("intake.requestSupplement", { note }).catch(() => {})} />
@@ -480,12 +489,21 @@ function DeseretProductionState({
           </strong>
           <FeedbackLocation record={record} packages={history.packages} locale={locale} />
           <p>{record.body}</p>
+          {record.processing && (
+            <div className="deseret-production-script">
+              <strong>{zh ? "出版社 QA 处理说明" : "Publisher QA note"}</strong>
+              <p>{record.processing.decision === "revision_requested" ? (zh ? "要求返修" : "Revision requested") : c.reviewed}
+                {" · "}<time dateTime={record.processing.processedAt}>{new Date(record.processing.processedAt).toLocaleString(zh ? "zh-CN" : "en-US")}</time>
+              </p>
+              {record.processing.note !== record.body && <p>{record.processing.note}</p>}
+            </div>
+          )}
           {record.targets?.length ? (
             <p>
               {record.targets
                 .map((target) =>
                   target === "script"
-                    ? c.script
+                    ? (zh ? "脚本" : "Script")
                     : target === "voice"
                       ? locale === "zh"
                         ? "声音"
@@ -508,19 +526,19 @@ function DeseretProductionState({
             .map(([kind, value]) => (
               <p className="deseret-production-script" key={kind}>
                 <strong>
-                  {kind === "pronunciation"
-                    ? locale === "zh"
-                      ? "发音修正"
-                      : "Pronunciation correction"
-                    : c.script}
+                  {({
+                    text: zh ? "替换后的台词" : "Requested wording",
+                    pronunciation: zh ? "发音修正" : "Pronunciation correction",
+                    en: zh ? "英文修正" : "English wording",
+                    zh: zh ? "中文修正" : "Chinese wording",
+                    extra: zh ? "补充说明" : "Additional instructions",
+                  } as Record<string, string>)[kind] ?? kind}
                 </strong>
                 <br />
                 {value}
               </p>
             ))}
-          {record.files?.map((file) => (
-            <p key={`${file.id}:${file.version}`}>{file.name}</p>
-          ))}
+          {!!record.files?.length && <DeseretBriefFiles files={record.files} visible locale={locale} />}
           {record.seconds !== undefined && <small>{record.seconds}s</small>}
         </blockquote>
       ))}
@@ -558,6 +576,8 @@ function DeseretProductionState({
           ))}
         </details>
       )}
+      </div>
+      </div>
     </section>
   );
 }
@@ -592,6 +612,8 @@ function SceneEditor({
 }) {
   const c = copy[locale];
   const [sceneId, setSceneId] = useState("");
+  const [characterIds, setCharacterIds] = useState<string[]>([]);
+  const characters = approvedSceneCharacters(data.brief);
   const [script, setScript] = useState("");
   const [duration, setDuration] = useState("");
   const [fileVersionId, setFileVersionId] = useState("");
@@ -611,6 +633,7 @@ function SceneEditor({
     setSceneId(id);
     const scene = data.scenes.find((item) => item.id === id);
     setScript(scene?.script || "");
+    setCharacterIds((scene?.characterIds ?? []).filter(id => characters.some(character => character.id === id)));
     setDuration(scene ? String(scene.duration) : "");
     setFileVersionId(scene?.fileVersionId || "");
   }
@@ -624,7 +647,7 @@ function SceneEditor({
       version: existing?.version ?? 1,
       duration: Number(duration),
       script,
-      characterIds: existing?.characterIds ?? [],
+      characterIds,
       voiceId: existing?.voiceId ?? "",
       fileVersionId,
       languageTaskId: file.languageTaskId,
@@ -666,6 +689,7 @@ function SceneEditor({
             rows={4}
             maxLength={20000}
             required
+            placeholder={zh ? "例如，镜头从书封推近到书名，旁白读出第一句。请写明画面和对应台词。" : "For example, move from the cover to the title as the narrator reads the opening line. Describe the shot and its spoken words."}
             value={script}
             onChange={(event) => setScript(event.target.value)}
           />
@@ -682,6 +706,14 @@ function SceneEditor({
             onChange={(event) => setDuration(event.target.value)}
           />
         </label>
+        {characters.length > 0 && <fieldset className="deseret-scene-cast">
+          <legend>{zh ? "出场人物" : "Characters in this scene"}</legend>
+          {characters.map(character => <label key={character.id}>
+            <input type="checkbox" checked={characterIds.includes(character.id)}
+              onChange={event => setCharacterIds(event.target.checked ? [...characterIds, character.id] : characterIds.filter(id => id !== character.id))} />
+            {character.name}
+          </label>)}
+        </fieldset>}
         <label>
           {c.file}
           <SelectControl

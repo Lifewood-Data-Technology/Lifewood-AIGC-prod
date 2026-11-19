@@ -1196,6 +1196,15 @@ function projectDisplayStatus(project: Row) {
   return projectStatusLabel(project.workflow_status);
 }
 
+function reviewTaskLanguage(platform: Platform, row: Row) {
+  const task = row.language_project_id ? platform.languages.find(item => item.id === row.language_project_id) : row;
+  const name = s(row.language || task?.language);
+  const code = s(row.language_code || task?.language_code);
+  const projectId = row.project_id || task?.project_id;
+  const linked = task?.source_system === "deseret_book" || platform.projects?.some(item => item.id === projectId && item.source_system === "deseret_book");
+  return linked && code && code !== name ? [name, code].filter(Boolean).join(" · ") : name;
+}
+
 function languageRequirement(language: Row | null | undefined) {
   if (!language) return "";
   const expected = s(language.language).trim();
@@ -9671,6 +9680,7 @@ function CustomerWorkflowDialog({
     <dialog
       ref={dialog}
       className="account-access-dialog customer-workflow-dialog"
+      data-workflow={project?.source_system === "deseret_book" && mode === "delivery" ? "deseret" : undefined}
       aria-labelledby="customer-workflow-dialog-title"
       onCancel={(event) => { event.preventDefault(); attemptClose(); }}
     ><DialogSections>
@@ -17158,7 +17168,7 @@ function QualityWorkbenchPage({
   const approvalBlocked = staleSelection || anyFailed || hasReviewIssues(issues) || hasPendingIssue;
   void uploadFile;
   return (
-    <div className="quality-workbench-page" onKeyDownCapture={event => {
+    <div className="quality-workbench-page" data-project-source={integrationProject ? "deseret" : undefined} onKeyDownCapture={event => {
       if (event.key === "Escape" && (markMode || pendingPosition)) {
         event.preventDefault();
         event.stopPropagation();
@@ -17181,7 +17191,10 @@ function QualityWorkbenchPage({
         <p>{zh?"旧版草稿已保留，当前画面暂停且无法提交审核。":"The previous draft is retained. Playback is paused and review submission is locked."}</p>
         {replacement&&<button type="button" onClick={()=>resetReview(s(replacement.id))}>{zh?"切换到最新待审成片":"Open latest pending final"}</button>}
       </div>}
-      {selected && integrationProject && <DeseretProductionPanel key={`${platform.account.email}:${s(selected.id)}`} projectId={integrationProjectId} taskId={s(selected.language_project_id)} locale={locale}/>}
+      {selected && integrationProject && <details className="deseret-quality-reference" key={`${platform.account.email}:${s(selected.id)}`}>
+        <summary>Deseret Book</summary>
+        <DeseretProductionPanel projectId={integrationProjectId} taskId={s(selected.language_project_id)} locale={locale}/>
+      </details>}
       <div className="quality-workbench-summary">
         <span>
           <b>{platform.pendingQuality.length}</b>
@@ -17224,7 +17237,7 @@ function QualityWorkbenchPage({
                   <span>
                     <strong>{s(item.project_name)}</strong>
                     <small>
-                      {s(item.language)} · v{n(item.version)}
+                      {reviewTaskLanguage(platform, item)} · v{n(item.version)}
                     </small>
                     <small>{formatDate(item.created_at, locale)}</small>
                   </span>
@@ -17246,7 +17259,7 @@ function QualityWorkbenchPage({
                   </small>
                   <h2>{s(selected.project_name)}</h2>
                   <p>
-                    {s(selected.language)} · v{n(selected.version)} ·{" "}
+                    {reviewTaskLanguage(platform, selected)} · v{n(selected.version)} ·{" "}
                     {s(selected.original_name)}
                   </p>
                 </div>
@@ -17740,7 +17753,7 @@ function QualityWorkbenchPage({
                     <dl>
                       <div>
                         <dt>{zh ? "语言" : "Language"}</dt>
-                        <dd>{s(selected.language)}</dd>
+                        <dd>{reviewTaskLanguage(platform, selected)}</dd>
                       </div>
                       <div>
                         <dt>{zh ? "版本" : "Version"}</dt>
@@ -18467,17 +18480,17 @@ function DeliveriesPage({
   ].sort();
   const deliveryLanguages = [
     ...new Set(
-      platform.languages.map((item) => s(item.language)).filter(Boolean),
+      platform.languages.map((item) => reviewTaskLanguage(platform, item)).filter(Boolean),
     ),
   ].sort();
   const rows = platform.languages.filter(
     (item) =>
       (stages[tab] as readonly string[]).includes(s(item.status)) &&
-      `${s(item.project_name)} ${s(item.client_name)} ${s(item.language)}`
+      `${s(item.project_name)} ${s(item.client_name)} ${reviewTaskLanguage(platform, item)}`
         .toLowerCase()
         .includes(query.trim().toLowerCase()) &&
       (!clientFilter || s(item.client_name) === clientFilter) &&
-      (!languageFilter || s(item.language) === languageFilter),
+      (!languageFilter || reviewTaskLanguage(platform, item) === languageFilter),
   );
   const pages = Math.max(1, Math.ceil(rows.length / pageSize));
   const safePage = Math.min(page, pages);
@@ -18603,12 +18616,12 @@ function DeliveriesPage({
               {visibleRows.map((item) => {
                 const final = salesFinalFile(platform.files, s(item.id), salesDeliveryStatuses);
                 return (
-                  <tr key={s(item.id)}>
+                  <tr key={s(item.id)} data-workflow={item.source_system === "deseret_book" || platform.projects?.some(project => project.id === item.project_id && project.source_system === "deseret_book") ? "deseret" : undefined}>
                     <td>
                       <strong>{s(item.project_name)}</strong>
                       <small>{s(item.client_name)}</small>
                     </td>
-                    <td>{s(item.language)}</td>
+                    <td>{reviewTaskLanguage(platform, item)}</td>
                     <td>
                       {final ? (
                         <>
