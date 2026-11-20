@@ -107,7 +107,7 @@ export function parseIntegrationConfig(env: NodeJS.ProcessEnv = process.env): In
 
 export function resolveIntegrationEndpoint(config: Pick<IntegrationConfig, "enabled" | "peerBaseUrl" | "allowLoopbackHttp">, path: string): URL {
   if (!config.enabled) throw Error("Integration is disabled");
-  if (!/^\/api\/integrations\/(?:aigc\/events|deseret-book\/(?:events|handoffs))$/.test(path)) throw Error("Unsupported integration endpoint");
+  if (!/^\/api\/integrations\/(?:aigc\/events(?:\/receipt)?|deseret-book\/(?:events|handoffs))$/.test(path)) throw Error("Unsupported integration endpoint");
   return new URL(path, integrationPeerOrigin(config.peerBaseUrl, config.allowLoopbackHttp));
 }
 
@@ -115,6 +115,62 @@ export function integrationBodyHash(body: Uint8Array | string): string {
   const bytes = typeof body === "string" ? Buffer.from(body, "utf8") : body;
   if (bytes.byteLength > MAX_INTEGRATION_BODY_BYTES) throw Error("Integration metadata exceeds the size limit");
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+/**
+ * A non-2xx answer as a coded error: `REMOTE_<status>`, plus Deseret's own `code` (for example `request_reused`)
+ * when the body states one in the expected form. `httpStatus` is used instead of `status` so existing job
+ * error mapping (`status` 403 → ACCESS_DENIED) is unchanged.
+ */
+async function remoteFailure(response: Response) {
+  let remoteCode: string | undefined;
+  try {
+    const body: unknown = await response.json();
+    if (record(body) && typeof body.code === "string" && /^[a-z][a-z0-9_]{0,79}$/.test(body.code)) remoteCode = body.code;
+  } catch { /* An unreadable body states no code. */ }
+  return Object.assign(Error("Integration delivery failed."), { code: `REMOTE_${response.status}`, httpStatus: response.status, ...(remoteCode ? { remoteCode } : {}) });
+}
+
+/** Accepts only Deseret's acknowledgement of exactly this event; anything else is a coded failure. */
+export async function readDeliveryAcknowledgement(response: Response, eventId: string): Promise<void> {
+  if (!response.ok) throw await remoteFailure(response);
+  const acknowledgement: unknown = await response.json();
+  if (!record(acknowledgement) || acknowledgement.accepted !== true || acknowledgement.eventId !== eventId)
+    throw Object.assign(Error("Integration acknowledgement mismatch."), { code: "REMOTE_ACK_MISMATCH" });
+}
+
+export type ReceiptLookup = { eventId: string; projectId: string; bodySha256: string };
+export const RECEIPT_LOOKUP_PATH = "/api/integrations/aigc/events/receipt";
+
+/**
+ * Signed lookup of Deseret's receipt for one AIGC event (contract of 2026-11-21): POST {eventId, projectId,
+ * bodySha256} with the event id as request id. `projectId` is the Deseret project id of the original envelope;
+ * `bodySha256` is the SHA-256 of the exact bytes originally sent.
+ */
+export function receiptLookupRequest(config: Pick<IntegrationConfig, "enabled" | "peerBaseUrl" | "allowLoopbackHttp" | "outgoingKeyId" | "outgoingSecret">, query: ReceiptLookup) {
+  if (!identity(query.eventId) || !identity(query.projectId) || !digestPattern.test(query.bodySha256)) throw Error("Invalid receipt lookup");
+  const url = resolveIntegrationEndpoint(config, RECEIPT_LOOKUP_PATH);
+  const body = JSON.stringify({ eventId: query.eventId, projectId: query.projectId, bodySha256: query.bodySha256 });
+  const headers: Record<string, string> = {
+    ...signIntegrationRequest({ sender: "aigc", keyId: config.outgoingKeyId, secret: config.outgoingSecret, method: "POST", pathAndQuery: url.pathname + url.search, body, requestId: query.eventId }),
+    "content-type": "application/json",
+  };
+  return { url, init: { method: "POST", headers, body, redirect: "error" as const } };
+}
+
+/**
+ * true only for 200 {accepted:true, eventId, status:"received"}; 404 means no matching receipt (false). Any other
+ * answer is a coded error: it says nothing about the receipt and is retried.
+ */
+export async function readReceiptConfirmation(response: Response, eventId: string): Promise<boolean> {
+  if (response.status === 404) return false;
+  if (response.status !== 200) throw await remoteFailure(response);
+  try {
+    const answer: unknown = await response.json();
+    return record(answer) && answer.accepted === true && answer.eventId === eventId && answer.status === "received";
+  } catch {
+    return false;
+  }
 }
 
 type SigningInput = {

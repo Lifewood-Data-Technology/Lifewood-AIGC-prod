@@ -38,6 +38,7 @@ const copy = {
     final: "Final video",
     feedback: "Publisher feedback",
     author: "Author feedback",
+    issueSource: { marketing: "Marketing issue", creative: "Creative issue", publisher_qa: "Publisher QA issue" } as Record<string, string>,
     history: "Published packages",
     delivery: "Delivery",
     empty: "No production files are registered yet.",
@@ -85,6 +86,7 @@ const copy = {
     final: "完整影片",
     feedback: "出版社意见",
     author: "作者意见",
+    issueSource: { marketing: "营销意见", creative: "创意意见", publisher_qa: "出版社 QA 意见" } as Record<string, string>,
     history: "已发布审阅包",
     delivery: "交付",
     empty: "尚未登记制作文件。",
@@ -484,9 +486,14 @@ function DeseretProductionState({
       )}
       {[...history.feedback, ...history.authorFeedback].map((record) => (
         <blockquote key={record.id}>
-          <strong>
-            {record.type === "author.feedback" ? c.author : c.feedback}
-          </strong>
+          {/* Final QA return issues name the reviewer role that raised them; other records keep their labels. */}
+          {record.type !== "author.feedback" && record.role && c.issueSource[record.role] ? (
+            <strong data-source-role={record.role}>{c.issueSource[record.role]}</strong>
+          ) : (
+            <strong>
+              {record.type === "author.feedback" ? c.author : c.feedback}
+            </strong>
+          )}
           <FeedbackLocation record={record} packages={history.packages} locale={locale} />
           <p>{record.body}</p>
           {record.processing && (

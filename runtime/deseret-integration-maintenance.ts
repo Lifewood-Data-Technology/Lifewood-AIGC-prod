@@ -3,7 +3,7 @@ import { createDeseretIntegrationJobs, startDeseretIntegrationScheduler } from "
 import { deseretServiceProjectContext, productionStagingBucket, uploadProjectFile, workflowSubmissionDatabase } from "../db/backend";
 import { businessScopes, withBusinessOperation } from "../db/business-deletion";
 import { guardedMutation } from "../db/mutation-guard";
-import { parseIntegrationConfig, resolveIntegrationEndpoint, signIntegrationRequest, type HandoffMaterial } from "../lib/deseret-integration-contract";
+import { parseIntegrationConfig, readDeliveryAcknowledgement, readReceiptConfirmation, receiptLookupRequest, resolveIntegrationEndpoint, signIntegrationRequest, type HandoffMaterial } from "../lib/deseret-integration-contract";
 import { createDeseretMaterialTransfer, readMaterialTransferConfig } from "./deseret-material-transfer";
 import { nativeIntegrationFiles } from "../db/deseret-integration-runtime";
 import { reusableIncomingVersion } from "../db/deseret-native-files";
@@ -136,10 +136,11 @@ export function startDeseretIntegrationMaintenance() {
       const endpoint = resolveIntegrationEndpoint(config, "/api/integrations/aigc/events");
       const headers = signIntegrationRequest({ sender: "aigc", keyId: config.outgoingKeyId, secret: config.outgoingSecret, method: "POST", pathAndQuery: endpoint.pathname + endpoint.search, body, requestId: eventId });
       const response = await fetch(endpoint, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body, redirect: "error", signal });
-      if (!response.ok) throw Object.assign(Error("Integration delivery failed."), { code: `REMOTE_${response.status}` });
-      const acknowledgement: unknown = await response.json();
-      if (!acknowledgement || typeof acknowledgement !== "object" || !("accepted" in acknowledgement) || acknowledgement.accepted !== true || !("eventId" in acknowledgement) || acknowledgement.eventId !== eventId)
-        throw Object.assign(Error("Integration acknowledgement mismatch."), { code: "REMOTE_ACK_MISMATCH" });
+      await readDeliveryAcknowledgement(response, eventId);
+    },
+    async confirmReceipt(query, signal) {
+      const request = receiptLookupRequest(config, query);
+      return readReceiptConfirmation(await fetch(request.url, { ...request.init, signal }), query.eventId);
     },
   });
   const scheduler = startDeseretIntegrationScheduler(jobs, {

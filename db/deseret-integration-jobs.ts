@@ -3,16 +3,18 @@ import type { Database } from "./database";
 import { guardedMutation } from "./mutation-guard";
 import { visibleProjectSql } from "./business-visibility";
 import { deseretOutboxStatement, readDeseretState } from "./deseret-integration";
-import { validateHandoffManifest, type HandoffMaterial } from "../lib/deseret-integration-contract";
+import { integrationBodyHash, validateHandoffManifest, type HandoffMaterial, type ReceiptLookup } from "../lib/deseret-integration-contract";
 import type { MaterialTransferInput, MaterialTransferPlan } from "../runtime/deseret-material-transfer";
 import { materialTransferBudget } from "../runtime/deseret-material-transfer";
 
 type Row = Record<string, unknown>;
 type JobOperation = "read_source" | "plan_transfer" | "transfer_file" | "register_material" | "complete_material" | "deliver_event" | "complete_event";
-type JobDiagnostic = {
+export type JobDiagnostic = {
   event: "deseret.integration_job"; at: string; jobId?: string; projectId?: string;
   direction: string; operation: JobOperation; attempt: number; elapsedMs: number;
   outcome: "failed" | "ready" | "delivered"; code?: string; httpStatus?: number; providerRequestId?: string;
+  /** Set when delivery was confirmed by Deseret's stored receipt for the original bytes, not by this send. */
+  confirmation?: "prior_receipt";
 };
 export type DeseretJobDependencies = {
   db: Database;
@@ -24,6 +26,11 @@ export type DeseretJobDependencies = {
   projectAuthority(projectId: string): Promise<{ sql: string; values: (string | number | null)[] }>;
   withProject<T>(projectId: string, work: () => Promise<T>): Promise<T>;
   deliver(body: string, eventId: string, signal: AbortSignal): Promise<void>;
+  /**
+   * Whether Deseret holds a successful receipt for this event with exactly these original bytes (signed receipt
+   * lookup). Without it, an unconfirmed `request_reused` stays a failure.
+   */
+  confirmReceipt?(query: ReceiptLookup, signal: AbortSignal): Promise<boolean>;
   clock?: () => number;
   reportDiagnostic?(event: JobDiagnostic): void;
 };
@@ -34,6 +41,30 @@ const errorCode = (error: unknown) => {
   return typeof code === "string" && /^[A-Z0-9_]{1,80}$/.test(code) ? code : "INTEGRATION_JOB_FAILED";
 };
 const jobError = (message: string, code: string) => Object.assign(new Error(message), { code });
+
+/** Scene keys that carried production script text. Production scripts stay inside AIGC; Deseret receives none. */
+const SCRIPT_KEYS = ["narration", "script"] as const;
+/**
+ * The exact body to send for a stored outbox event. A `review.published` queued by an earlier version carried the
+ * scene scripts. Deseret reads scenes from `payload.package.scenes` and from the older `payload.scenes`; in every
+ * such array the `narration` and `script` keys are removed and nothing else is changed. The result is
+ * deterministic, so every resend of one event has identical bytes. Events without these keys are returned
+ * unchanged, byte for byte. The stored record itself is never rewritten.
+ */
+export function outgoingEventBody(stored: string): string {
+  const envelope: unknown = JSON.parse(stored);
+  if ((envelope as { type?: unknown })?.type !== "review.published") return stored;
+  const payload = (envelope as { payload?: { package?: { scenes?: unknown }; scenes?: unknown } }).payload;
+  let changed = false;
+  for (const scenes of [payload?.package?.scenes, payload?.scenes]) {
+    if (!Array.isArray(scenes)) continue;
+    for (const scene of scenes) {
+      if (!scene || typeof scene !== "object" || Array.isArray(scene)) continue;
+      for (const key of SCRIPT_KEYS) if (Object.hasOwn(scene, key)) { delete (scene as Row)[key]; changed = true; }
+    }
+  }
+  return changed ? JSON.stringify(envelope) : stored;
+}
 
 /**
  * Native tasks whose `02_客户素材` folder receives one incoming Deseret material.
@@ -67,16 +98,16 @@ export function createDeseretIntegrationJobs(deps: DeseretJobDependencies) {
   const clock = deps.clock || Date.now;
   const iso = (value = clock()) => new Date(value).toISOString();
   const safeId = (value: unknown) => typeof value === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(value) ? value : undefined;
-  function diagnostic(row: Row, started: number, operation: JobOperation, outcome: JobDiagnostic["outcome"], error?: unknown) {
+  function diagnostic(row: Row, started: number, operation: JobOperation, outcome: JobDiagnostic["outcome"], error?: unknown, confirmation?: JobDiagnostic["confirmation"]) {
     const details = error && typeof error === "object" ? error as Record<string, unknown> : {};
     const metadata = details.$metadata && typeof details.$metadata === "object" ? details.$metadata as Record<string, unknown> : {};
-    const status = metadata.httpStatusCode ?? details.status;
+    const status = metadata.httpStatusCode ?? details.status ?? details.httpStatus;
     const knownNames: Record<string, string> = {
       TimeoutError: "OPERATION_TIMEOUT", AbortError: "OPERATION_ABORTED", SlowDown: "STORAGE_THROTTLED",
       AccessDenied: "ACCESS_DENIED", NoSuchKey: "STORAGE_OBJECT_MISSING", NoSuchUpload: "STORAGE_UPLOAD_MISSING",
       InvalidAccessKeyId: "STORAGE_AUTH_FAILED", SignatureDoesNotMatch: "STORAGE_AUTH_FAILED",
     };
-    const knownCodes = new Set(["ACCESS_DENIED", "DESERET_OWNER_UNAVAILABLE", "OPERATION_ABORTED", "STALE_RECORD", "TRANSFER_NOT_CONFIGURED", "TRANSFER_REGION_UNSUPPORTED", "TRANSFER_INTEGRITY_UNAVAILABLE", "TRANSFER_PLAN_MISMATCH", "TRANSFER_SOURCE_CHANGED", "TRANSFER_DESTINATION_CONFLICT", "DESERET_FRAME_TASK_UNBOUND", "ECONNRESET", "ETIMEDOUT", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"]);
+    const knownCodes = new Set(["ACCESS_DENIED", "DESERET_OWNER_UNAVAILABLE", "OPERATION_ABORTED", "STALE_RECORD", "TRANSFER_NOT_CONFIGURED", "TRANSFER_REGION_UNSUPPORTED", "TRANSFER_INTEGRITY_UNAVAILABLE", "TRANSFER_PLAN_MISMATCH", "TRANSFER_SOURCE_CHANGED", "TRANSFER_DESTINATION_CONFLICT", "DESERET_FRAME_TASK_UNBOUND", "DESERET_REPLAY_UNCONFIRMED", "ECONNRESET", "ETIMEDOUT", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"]);
     const code = typeof details.name === "string" && Object.hasOwn(knownNames, details.name) ? knownNames[details.name]
       : typeof details.code === "string" && knownCodes.has(details.code) ? details.code : "INTEGRATION_JOB_FAILED";
     const event: JobDiagnostic = {
@@ -84,6 +115,7 @@ export function createDeseretIntegrationJobs(deps: DeseretJobDependencies) {
       direction: row.direction === "deseret_to_aigc" || row.direction === "aigc_to_deseret" ? row.direction : "callback",
       operation, attempt: Math.max(1, Number(row.attempts || 0) + 1), elapsedMs: Math.max(0, clock() - started), outcome,
       ...(outcome === "failed" ? { code, httpStatus: typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599 ? status : undefined, providerRequestId: safeId(metadata.requestId) } : {}),
+      ...(confirmation ? { confirmation } : {}),
     };
     // Keep an append-only diagnostic trail when successful retries clear last_error.
     // Never include exception messages, stacks, source objects or signed URLs.
@@ -238,8 +270,9 @@ export function createDeseretIntegrationJobs(deps: DeseretJobDependencies) {
       pack.files = pack.files.map(file => ({ ...file, ...validateHandoffManifest([JSON.parse(String(publicationTasks.find(task => task.file_id === file.id)!.target_json))])[0] }));
       pack.filesReady = true;
       const scenes = pack.scenes.map(scene => ({
+        // No narration: the scene script stays in AIGC's production state only.
         id: scene.id, number: scene.order, version: scene.version, duration: scene.duration, languageTaskId: scene.languageTaskId,
-        narration: { en: scene.script, zh: "" }, characterIds: scene.characterIds,
+        characterIds: scene.characterIds,
         video: { id: scene.fileVersionId, version: pack.files.find(file => file.id === scene.fileVersionId)!.version, kind: "video" },
       }));
       const published = { id: pack.id, phase: pack.phase, version: pack.version, publicationId: pack.publicationId, publishedAt: pack.publishedAt, scenes, ...(pack.characters ? { characters: pack.characters } : {}) };
@@ -278,11 +311,34 @@ export function createDeseretIntegrationJobs(deps: DeseretJobDependencies) {
         }
         const started = clock();
         let operation: JobOperation = "deliver_event";
-        try {
-          await deps.deliver(String(row.body_json), String(row.id), AbortSignal.any([signal, AbortSignal.timeout(20000)]));
+        const stored = String(row.body_json);
+        let altered = false;
+        const complete = async (confirmation?: JobDiagnostic["confirmation"]) => {
           operation = "complete_event";
           const completed = await db.prepare("UPDATE deseret_outbox SET state='delivered',last_error=NULL,lease_id=NULL,lease_expires_at=NULL,updated_at=? WHERE id=? AND lease_id=? AND state='sending'").bind(iso(), row.id, lease).run();
-          if (Number(completed.meta.changes) === 1) diagnostic(row, started, operation, "delivered");
+          if (Number(completed.meta.changes) === 1) diagnostic(row, started, operation, "delivered", undefined, confirmation);
+        };
+        try {
+          const body = outgoingEventBody(stored);
+          altered = body !== stored;
+          try {
+            await deps.deliver(body, String(row.id), AbortSignal.any([signal, AbortSignal.timeout(20000)]));
+          } catch (error) {
+            // Deseret binds an event id to the bytes it committed. A stripped resend of an event it already holds in
+            // its original form is answered with HTTP 409 and exactly `request_reused`. Only then, and only for an
+            // altered event, ask for Deseret's receipt of the original wire bytes; a matching receipt is the delivery.
+            // Any other answer, including other conflicts, an unmatched receipt or a failed lookup, remains a failure.
+            const rejection = error as { httpStatus?: unknown; remoteCode?: unknown } | undefined;
+            if (!altered || rejection?.httpStatus !== 409 || rejection?.remoteCode !== "request_reused") throw error;
+            const projectId = (JSON.parse(stored) as { projectId?: unknown }).projectId;
+            const confirmed = deps.confirmReceipt && typeof projectId === "string"
+              ? await deps.confirmReceipt({ eventId: String(row.id), projectId, bodySha256: integrationBodyHash(stored) }, AbortSignal.any([signal, AbortSignal.timeout(20000)]))
+              : false;
+            if (!confirmed) throw jobError("Deseret holds a different body for this event and no matching receipt was confirmed.", "DESERET_REPLAY_UNCONFIRMED");
+            await complete("prior_receipt");
+            return;
+          }
+          await complete();
         } catch (error) {
           diagnostic(row, started, operation, "failed", error);
           const wait = Math.min(300000, 2000 * 2 ** Math.min(8, Number(row.attempts)));
