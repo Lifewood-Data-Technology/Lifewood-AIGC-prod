@@ -62,7 +62,7 @@ test -s dist-mysql/launcher/server.mjs
 node scripts/deployment/prepare-public-config.mjs --env "$PROD_BASE_ENV" --origin https://www.aigc.lifewood.com --out "$NEW_PRIVATE_CONFIG_DIR"
 ```
 
-依模板安装私有配置、证书和服务文件；核对服务账号对应用、配置、证书的权限。运行目录 `/opt/lifewood/aigc/current` 指向本次 release。systemd 的 Node 路径应指向实际 Node 24，Nginx 转发至本机 3002。模板生成器默认关闭 Deseret 对接；待正式双方地址、签名、桶授权及待发任务核对完成后再启用。测试代理 7897 仅在正式主机有同一受控代理且实测通过时配置。
+依模板安装私有配置、证书和服务文件；核对服务账号对应用、配置、证书的权限。运行目录 `/opt/lifewood/aigc/current` 指向本次 release。systemd 的 Node 路径应指向实际 Node 24，Nginx 转发至本机 3002。模板生成器默认关闭 Deseret 对接；待正式双方地址、签名、桶授权及待发任务核对完成后再启用。Deseret 的带图成片退回（`FilmEvidenceEnabled`）须在 AIGC 部署并验证返修接收后才能开启，见[成片 QA 返修接收修复](DESERET_QA_REVISION_REPAIR_20261121.md)。测试代理 7897 仅在正式主机有同一受控代理且实测通过时配置。
 
 ```bash
 sudo systemd-analyze verify /etc/systemd/system/aigc-public.service

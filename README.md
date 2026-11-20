@@ -10,6 +10,8 @@ pnpm typecheck
 pnpm build
 ```
 
+`pnpm test` 运行隔离测试，使用内存 SQLite 和合成数据，需要 Node 22.13 或以上。
+
 部署入口为 `dist-mysql/launcher/server.mjs`。数据库恢复、Wasabi 迁移、私有配置、HTTPS、服务启动与回退步骤见[生产部署手册](docs/PRODUCTION_OPERATIONS_20261118.md)。
 
 The [operations guide](docs/PRODUCTION_OPERATIONS_20261118.md) covers database restore, verified object migration, HTTPS configuration and service cutover. Store credentials, backups and object manifests outside the repository.

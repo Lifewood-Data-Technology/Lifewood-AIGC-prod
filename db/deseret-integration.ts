@@ -9,7 +9,7 @@ import { progressEditableStatuses } from "../lib/task-file-access";
 import { validCalendarDate } from "../lib/employee-workflow";
 import { approvedFileIds, approvedSceneCharacters, producerBoundValue, producerBoundValues, producerDurationSeconds, versionedProductionLanguage } from "../lib/deseret-producer-brief";
 import { integrationBodyHash, validateHandoffManifest, type HandoffMaterial, type IntegrationConfig, type IntegrationEnvelope } from "../lib/deseret-integration-contract";
-import type { DeseretFeedback, DeseretIntegrationState, DeseretPublishedFile, DeseretReviewPackage, DeseretScene, DeseretWorkspace } from "../lib/deseret-workspace";
+import type { DeseretFeedback, DeseretIntegrationState, DeseretPublishedFile, DeseretReviewPackage, DeseretRevisionFrame, DeseretScene, DeseretWorkspace } from "../lib/deseret-workspace";
 
 type Row = Record<string, unknown>;
 export type IntegrationProjectContext = {
@@ -24,13 +24,19 @@ export type IntegrationNativeFile = {
   sha256: string; qualityPassed: boolean; finalSubmission: boolean; storageReady: boolean;
   objectKey: string; storageProfileId: string; etag: string;
 };
+/**
+ * `incomingMaterials`: the ids are native copies of Deseret materials registered in `02_客户素材` (handoff
+ * materials, review attachments, revision frames). Quality reviewers' reads then follow the native file
+ * read rule for their assigned tasks' folders instead of the review-version subset.
+ */
+export type NativeFileReadOptions = { incomingMaterials?: boolean };
 export type IntegrationDependencies = {
   db: Database;
   config: IntegrationConfig;
   createNativeProject(payload: Record<string, string>, commit: (input: NativeProjectCreated) => DatabaseStatement[]): Promise<unknown>;
   projectContext(email: string, projectId: string, write: boolean): Promise<IntegrationProjectContext>;
   serviceProjectContext(projectId: string): Promise<IntegrationProjectContext>;
-  nativeFiles(context: IntegrationProjectContext, fileIds?: string[]): Promise<IntegrationNativeFile[]>;
+  nativeFiles(context: IntegrationProjectContext, fileIds?: string[], options?: NativeFileReadOptions): Promise<IntegrationNativeFile[]>;
   verifyNativeFiles(files: IntegrationNativeFile[]): Promise<void>;
   projectSummaryStatement?: (projectId: string) => DatabaseStatement;
   clock?: () => number;
@@ -49,7 +55,7 @@ export function readDeseretState(row: Row): DeseretIntegrationState {
     reject("Stored integration state requires reconciliation.", "DESERET_STATE_INVALID", 409);
   return value as DeseretIntegrationState;
 }
-function materialId(projectId: string, sourceRevision: string, file: HandoffMaterial, direction: string, packageId = "") {
+function materialId(projectId: string, sourceRevision: string, file: Pick<HandoffMaterial, "id" | "version">, direction: string, packageId = "") {
   return createHash("sha256").update(JSON.stringify([projectId, sourceRevision, direction, packageId, file.id, file.version])).digest("hex");
 }
 export function deseretOutboxStatement(db: Database, projectId: string, externalId: string, sourceRevision: string, type: IntegrationEnvelope["type"], payload: Row, at: string) {
@@ -110,6 +116,124 @@ function currentStoryboardApproved(state: DeseretIntegrationState, taskId: strin
     const prior = approved.get(scene.id);
     return prior && scene.version === prior.version && scene.fileVersionId === prior.fileVersionId && scene.order === prior.order;
   });
+}
+
+const qaRevisionKeys = new Set(["actorId", "body", "sceneId", "seconds", "issues"]);
+/**
+ * Final QA revision summary carried by a signed `review.concluded` event (`payload.qaRevision`). It is
+ * accepted only on the publisher's own final review round that concludes `revision`, for a scene whose
+ * exact-version decision in the same event is `revision`. It becomes a package-linked `review.feedback`
+ * record whose id is the event id, persisted with the conclusion in one transaction.
+ */
+export function finalQaRevisionFeedback(input: {
+  qaRevision: unknown; pack: DeseretReviewPackage; conclusion: unknown; decisions: unknown[];
+  authorRevision: boolean; feedbackId: string; occurredAt: string; existing: DeseretFeedback[];
+}): DeseretFeedback {
+  const { qaRevision, pack } = input;
+  if (pack.phase !== "final" || input.conclusion !== "revision" || input.authorRevision)
+    reject("A QA revision note is only accepted with a final review revision conclusion.", "DESERET_QA_REVISION_INVALID");
+  if (!object(qaRevision) || Object.keys(qaRevision).some(key => !qaRevisionKeys.has(key)))
+    reject("Invalid final QA revision note.", "DESERET_QA_REVISION_INVALID");
+  const { actorId, body, sceneId, seconds } = qaRevision;
+  if (typeof body !== "string" || !body.trim() || body.length > 2000 || typeof actorId !== "string" || !identity.test(actorId))
+    reject("A final QA revision requires a reason and an actor reference.", "DESERET_QA_REVISION_INVALID");
+  const scene = typeof sceneId === "string" ? pack.scenes.find(item => item.id === sceneId) : undefined;
+  if (!scene || !input.decisions.some(decision => object(decision) && decision.sceneId === scene.id && decision.sceneVersion === scene.version && decision.decision === "revision"))
+    reject("The QA revision must reference a scene revised at its reviewed version.", "DESERET_QA_REVISION_INVALID");
+  if (seconds !== undefined && !reviewedSeconds(seconds, scene.duration))
+    reject("The QA revision timecode is outside the reviewed final.", "DESERET_QA_REVISION_INVALID");
+  if (input.existing.some(note => note.id === input.feedbackId))
+    reject("This feedback has already been recorded.", "DESERET_REPLAY_CONFLICT", 409);
+  return {
+    id: input.feedbackId, type: "review.feedback", packageId: pack.id, body: body.trim(), actorId,
+    createdAt: input.occurredAt, sceneId: scene.id, mode: "revision", ...(typeof seconds === "number" ? { seconds } : {}),
+  };
+}
+
+export const QA_REVISION_LIMITS = { issues: 100, framesPerIssue: 12, images: 256, imageBytes: 10 * 1024 * 1024, caption: 500 } as const;
+const issueRoles = new Set(["marketing", "creative", "publisher_qa"]);
+const issueKeys = new Set(["id", "role", "actorId", "sceneId", "sceneVersion", "body", "seconds", "endSeconds", "frames"]);
+const frameKeys = new Set(["seconds", "caption", "file"]);
+const manifestKeys = new Set(["id", "version", "size", "sha256", "integrity", "purpose", "storageProfileId", "objectKey", "name", "mimeType"]);
+const guidanceImageTypes = new Set(["image/jpeg", "image/png"]);
+function invalidIssue(message: string): never { reject(message, "DESERET_QA_REVISION_INVALID"); }
+function sameJson(left: unknown, right: unknown): boolean {
+  if (Array.isArray(left) && Array.isArray(right)) return left.length === right.length && left.every((item, index) => sameJson(item, right[index]));
+  if (object(left) && object(right)) {
+    const keys = Object.keys(left);
+    return keys.length === Object.keys(right).length && keys.every(key => Object.hasOwn(right, key) && sameJson(left[key], right[key]));
+  }
+  return left === right;
+}
+const reviewedSeconds = (value: unknown, duration: number): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= duration;
+/** A frame file must be the canonical, verified Deseret guidance manifest: no extra or rewritten fields. */
+function canonicalGuidanceImage(value: unknown): HandoffMaterial {
+  if (!object(value) || Object.keys(value).some(key => !manifestKeys.has(key))) invalidIssue("A revision frame requires a registered guidance image.");
+  let file: HandoffMaterial;
+  try { [file] = validateHandoffManifest([value]); } catch { invalidIssue("A revision frame requires a registered guidance image."); }
+  if (!sameJson(file, value) || file.purpose !== "guidance" || !guidanceImageTypes.has(file.mimeType) || file.size > QA_REVISION_LIMITS.imageBytes)
+    invalidIssue("A revision frame must be a registered PNG or JPEG guidance image.");
+  return file;
+}
+
+/**
+ * Optional `qaRevision.issues`. Each issue keeps its own stable id, reviewer role and actor, the exact
+ * reviewed scene version, an optional point or interval, and frames whose files are canonical guidance
+ * images. Any invalid issue rejects the whole event; nothing is truncated or partly written.
+ */
+export function finalQaRevisionIssues(input: {
+  qaRevision: Row; pack: DeseretReviewPackage; decisions: unknown[]; summaryId: string; occurredAt: string; existing: DeseretFeedback[];
+}): { issues: DeseretFeedback[]; files: HandoffMaterial[] } {
+  const value = input.qaRevision.issues;
+  if (value === undefined) return { issues: [], files: [] };
+  if (!Array.isArray(value)) invalidIssue("Final QA revision issues must be a list.");
+  if (value.length > QA_REVISION_LIMITS.issues)
+    reject(`A final revision carries at most ${QA_REVISION_LIMITS.issues} issues.`, "DESERET_QA_REVISION_LIMIT", 422);
+  const ids = new Set<string>();
+  const existingIds = new Set(input.existing.map(note => note.id));
+  const files = new Map<string, HandoffMaterial>();
+  const issues = value.map((issue): DeseretFeedback => {
+    if (!object(issue) || Object.keys(issue).some(key => !issueKeys.has(key))) invalidIssue("Invalid final QA revision issue.");
+    const { id, role, actorId, sceneId, sceneVersion, body, seconds, endSeconds, frames } = issue;
+    if (typeof id !== "string" || !identity.test(id) || id === input.summaryId || ids.has(id)) invalidIssue("Each revision issue requires its own stable id.");
+    ids.add(id);
+    if (existingIds.has(id)) reject("This revision issue has already been recorded.", "DESERET_REPLAY_CONFLICT", 409);
+    if (typeof role !== "string" || !issueRoles.has(role) || typeof actorId !== "string" || !identity.test(actorId))
+      invalidIssue("A revision issue requires a reviewer role and an actor reference.");
+    if (typeof body !== "string" || !body.trim() || body.length > 2000) invalidIssue("A revision issue requires its reason.");
+    const scene = typeof sceneId === "string" ? input.pack.scenes.find(item => item.id === sceneId) : undefined;
+    if (!scene || sceneVersion !== scene.version || !input.decisions.some(decision => object(decision) && decision.sceneId === scene.id && decision.sceneVersion === scene.version && decision.decision === "revision"))
+      invalidIssue("A revision issue must reference a scene revised at its reviewed version.");
+    if (seconds !== undefined && !reviewedSeconds(seconds, scene.duration)) invalidIssue("A revision issue timecode is outside the reviewed final.");
+    if (endSeconds !== undefined && (seconds === undefined || !reviewedSeconds(endSeconds, scene.duration) || endSeconds <= Number(seconds)))
+      invalidIssue("A revision interval must start before it ends, within the reviewed final.");
+    if (!Array.isArray(frames)) invalidIssue("A revision issue requires a frame list.");
+    if (frames.length > QA_REVISION_LIMITS.framesPerIssue)
+      reject(`A revision issue carries at most ${QA_REVISION_LIMITS.framesPerIssue} frames.`, "DESERET_QA_REVISION_LIMIT", 422);
+    const issueFiles = new Set<string>();
+    const stored: DeseretRevisionFrame[] = frames.map(frame => {
+      if (!object(frame) || Object.keys(frame).some(key => !frameKeys.has(key)) || !reviewedSeconds(frame.seconds, scene.duration))
+        invalidIssue("A revision frame requires its time within the reviewed final.");
+      if (frame.caption !== undefined && (typeof frame.caption !== "string" || !frame.caption.trim() || frame.caption.length > QA_REVISION_LIMITS.caption))
+        invalidIssue("A revision frame caption must be short, non-blank text.");
+      const file = canonicalGuidanceImage(frame.file);
+      if (issueFiles.has(file.id)) invalidIssue("A revision issue lists the same frame image twice.");
+      issueFiles.add(file.id);
+      const known = files.get(file.id);
+      if (known && !sameJson(known, file)) reject("The guidance file identity changed.", "DESERET_MEDIA_IDENTITY_CHANGED", 409);
+      files.set(file.id, file);
+      return { seconds: frame.seconds as number, ...(typeof frame.caption === "string" ? { caption: frame.caption } : {}), file };
+    });
+    return {
+      id, type: "review.feedback", packageId: input.pack.id, body: body.trim(), actorId, createdAt: input.occurredAt, sceneId: scene.id, mode: "revision",
+      role: role as DeseretFeedback["role"], sceneVersion: scene.version, revisionId: input.summaryId,
+      ...(typeof seconds === "number" ? { seconds } : {}), ...(typeof endSeconds === "number" ? { endSeconds } : {}), frames: stored,
+    };
+  });
+  if (files.size > QA_REVISION_LIMITS.images)
+    reject(`A final revision carries at most ${QA_REVISION_LIMITS.images} images.`, "DESERET_QA_REVISION_LIMIT", 422);
+  return { issues, files: [...files.values()] };
 }
 
 function previouslyPublishedFinal(state: DeseretIntegrationState, file: IntegrationNativeFile) {
@@ -222,6 +346,19 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
     const hash = integrationBodyHash(rawBody);
     const replay = await previousResponse(db, envelope.eventId, "deseret", hash);
     if (replay) return replay;
+    try {
+      return await applyReceived(envelope, hash);
+    } catch (error) {
+      // A concurrent delivery of the same event can commit after the lookup above. This delivery may then fail on
+      // any later read or check (for example "round closed") or on the transaction itself. The stored receipt
+      // decides: the same body gets the committed response; a different body is rejected as a replay conflict.
+      const duplicate = await previousResponse(db, envelope.eventId, "deseret", hash);
+      if (duplicate) return duplicate;
+      throw error;
+    }
+  }
+
+  async function applyReceived(envelope: IntegrationEnvelope, hash: string) {
     const row = await link(envelope.projectId);
     if (row.source_revision !== envelope.sourceRevision) reject("The production source revision changed.", "DESERET_SOURCE_CONFLICT", 409);
     const context = await deps.serviceProjectContext(String(row.id));
@@ -229,6 +366,7 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
     const payload = envelope.payload;
     const pack = state.packages.find(item => item.id === payload.packageId && !item.withdrawn);
     if (!pack || !pack.filesReady || (payload.packageVersion !== undefined ? pack.version !== payload.packageVersion : envelope.type !== "author.feedback")) reject("The review publication is unavailable.", "DESERET_PACKAGE_CONFLICT", 409);
+    let revisionFiles: HandoffMaterial[] = [];
     if (envelope.type === "review.concluded") {
       const reviewedTaskIds = [...new Set(pack.files.map(file => file.languageTaskId))];
       const reviewedTasks = (await db.prepare("SELECT id,status FROM language_projects WHERE project_id=? AND id IN (SELECT value FROM json_each(?))").bind(row.id, JSON.stringify(reviewedTaskIds)).all<Row>()).results;
@@ -247,6 +385,25 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
       if (!Array.isArray(decisions) || decisions.length !== pack.scenes.length || pack.scenes.some(scene => !decisions.some(decision => object(decision) && decision.sceneId === scene.id && decision.sceneVersion === scene.version && ["approved", "revision"].includes(String(decision.decision))))) reject("Every scene requires an exact-version review decision.");
       const changed = decisions.filter(decision => object(decision) && decision.decision === "revision").map(decision => String(decision.sceneId));
       if ((payload.conclusion === "approved") !== (changed.length === 0)) reject("The round conclusion does not match its scene decisions.");
+      // Events sent before qaRevision existed omit the field and keep their original behaviour.
+      if (payload.qaRevision !== undefined) {
+        const existing = [...state.feedback, ...state.authorFeedback];
+        const summary = finalQaRevisionFeedback({
+          qaRevision: payload.qaRevision, pack, conclusion: payload.conclusion, decisions, authorRevision,
+          feedbackId: envelope.eventId, occurredAt: envelope.occurredAt, existing,
+        });
+        const { issues, files } = finalQaRevisionIssues({
+          qaRevision: payload.qaRevision as Row, pack, decisions, summaryId: summary.id, occurredAt: envelope.occurredAt, existing,
+        });
+        // One transfer task per frame image and package; a task an earlier note created for the same file is reused.
+        for (const file of files) {
+          const previous = await db.prepare("SELECT manifest_json FROM deseret_material_tasks WHERE id=?").bind(materialId(String(row.id), String(row.source_revision), file, "deseret_to_aigc", pack.id)).first<{ manifest_json: string }>();
+          if (previous && !sameJson(JSON.parse(previous.manifest_json), file)) reject("The guidance file identity changed.", "DESERET_MEDIA_IDENTITY_CHANGED", 409);
+        }
+        if (issues.length) summary.issueIds = issues.map(issue => issue.id);
+        state.feedback.push(summary, ...issues);
+        revisionFiles = files;
+      }
       if (authorRevision && object(payload.authorFeedback) && object(payload.authorFeedback.processing)) {
         const processing = payload.authorFeedback.processing;
         if (processing.decision !== "revision_requested" || !text(processing.note) || !text(processing.processedBy, 120) || !text(processing.processedAt, 64) || !Number.isFinite(Date.parse(processing.processedAt))) reject("Invalid author feedback processing record.");
@@ -273,6 +430,10 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
       for (const file of guidance) {
         const previous = await db.prepare("SELECT manifest_json FROM deseret_material_tasks WHERE id=?").bind(materialId(String(row.id), String(row.source_revision), file, "deseret_to_aigc", pack.id)).first<{ manifest_json: string }>();
         if (previous && previous.manifest_json !== JSON.stringify(file)) reject("The guidance file identity changed.", "DESERET_MEDIA_IDENTITY_CHANGED", 409);
+        // A frame image is registered only in its issue scenes' tasks; reusing it as an ordinary (shared) attachment
+        // of the same publication would make its scope ambiguous.
+        if (state.feedback.some(note => note.packageId === pack.id && note.frames?.some(frame => frame.file.id === file.id && frame.file.version === file.version)))
+          reject("This image is already a revision frame of this publication.", "DESERET_MEDIA_SCOPE_CONFLICT", 409);
       }
       if (payload.mode !== undefined && !["comment", "time", "revision", "flag"].includes(String(payload.mode))) reject("Invalid feedback mode.");
       if (payload.targets !== undefined && (!Array.isArray(payload.targets) || payload.targets.length > 4 || payload.targets.some(target => !["script", "visuals", "voice", "timing"].includes(String(target))))) reject("Invalid revision targets.");
@@ -303,6 +464,8 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
       responseStatement(db, envelope.eventId, "deseret", String(row.id), hash, response, at),
       serviceAuditStatement(db, String(row.id), envelope, context.actor.email, at),
       ...(envelope.type === "review.feedback" ? materialStatements(db, String(row.id), String(row.source_revision), validateHandoffManifest(payload.files || []), at, "deseret_to_aigc", pack.id) : []),
+      // Final QA revision frames: one deseret_to_aigc transfer task per image and package, in the same transaction.
+      ...(envelope.type === "review.concluded" ? materialStatements(db, String(row.id), String(row.source_revision), revisionFiles, at, "deseret_to_aigc", pack.id) : []),
     ]);
     return response;
   }
@@ -324,15 +487,20 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
     const files = [...new Map([...candidates, ...referencedFiles].map(file => [file.id, file])).values()];
     const materials = (await db.prepare("SELECT id,package_id,manifest_json,state FROM deseret_material_tasks WHERE project_id=? AND source_revision=? AND direction='deseret_to_aigc'").bind(projectId, row.source_revision).all<Row>()).results;
     // Resolve exact registration receipts, never guess a version by filename or object key.
-    const receiptIds = new Map<string,string[]>();
-    for (const material of materials) receiptIds.set(String(material.id), taskRows.map(task => {
-      const hash = createHash("sha256").update(`${material.id}:${task.id}`).digest("hex");
+    const materialReceipt = (materialTaskId: string, taskId: string) => {
+      const hash = createHash("sha256").update(`${materialTaskId}:${taskId}`).digest("hex");
       return `material:${hash.slice(0,8)}-${hash.slice(8,12)}-${hash.slice(12,16)}-${hash.slice(16,20)}-${hash.slice(20,32)}`;
-    }));
+    };
+    // Receipts only for this account's own tasks (all tasks for the lead).
+    const receiptIds = new Map<string,string[]>();
+    for (const material of materials) receiptIds.set(String(material.id), taskRows.map(task => materialReceipt(String(material.id), String(task.id))));
     const registration = materials.length ? (await db.prepare("SELECT id,response_json FROM deseret_inbox WHERE project_id=? AND sender='native-material' AND state='complete' AND id IN (SELECT value FROM json_each(?))").bind(projectId,JSON.stringify([...receiptIds.values()].flat())).all<Row>()).results : [];
     const registered = new Map(registration.map(item => [String(item.id),String(JSON.parse(String(item.response_json)).id || "")]));
-    const readableMaterials = registered.size ? await deps.nativeFiles(context,[...new Set(registered.values())].filter(Boolean)) : [];
+    // Registered copies sit in the task's 02_客户素材 folder: read them by the native file read rule
+    // (status, source and folder), so an assigned QC reviewer can open what /api/files lets them read.
+    const readableMaterials = registered.size ? await deps.nativeFiles(context,[...new Set(registered.values())].filter(Boolean), { incomingMaterials: true }) : [];
     const readableIds = new Set(readableMaterials.map(file => file.id));
+    const readableTasks = new Map(readableMaterials.map(file => [file.id, file.languageTaskId]));
     function receipt(material: Row | undefined) {
       if (!material) return { state: "unavailable", nativeVersionId: undefined };
       const nativeVersionId = material.state === "ready" ? (receiptIds.get(String(material.id)) ?? [])
@@ -360,11 +528,34 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
       taskIds.has(taskId) && (role !== "qc" || reviewFileTasks.get(fileVersionId) === taskId));
     const guidance = new Map(materials.filter(item => item.package_id != null).map(item => [String(item.id), item]));
     const activePackages = new Set(scoped.packages.filter(pack => !pack.withdrawn).map(pack => pack.id));
-    const feedback = scoped.feedback.map(note => !note.files?.length ? note : {
-      ...note, files: note.files.map(file => {
-        const id = materialId(projectId, String(row.source_revision), file, "deseret_to_aigc", note.packageId);
-        return { ...file, ...receipt(activePackages.has(note.packageId) ? guidance.get(id) : undefined) };
-      }),
+    // Final QA revision frames resolve only the copy registered in the issue's own scene task, and only when that
+    // task is one of this account's tasks and the copy passes the native read rule above.
+    const sceneTasks = new Map<string, string>(scoped.packages.flatMap(pack => pack.scenes.map(scene => [`${pack.id}\n${scene.id}\n${scene.version}`, scene.languageTaskId] as const)));
+    const issueTask = (note: DeseretFeedback) => note.revisionId !== undefined && activePackages.has(note.packageId)
+      ? sceneTasks.get(`${note.packageId}\n${note.sceneId}\n${note.sceneVersion}`) : undefined;
+    const projectFrame = (frame: DeseretRevisionFrame, packageId: string, taskId: string | undefined): DeseretRevisionFrame => {
+      const material = activePackages.has(packageId) ? guidance.get(materialId(projectId, String(row.source_revision), frame.file, "deseret_to_aigc", packageId)) : undefined;
+      const copy = material?.state === "ready" && taskId !== undefined && taskIds.has(taskId) ? registered.get(materialReceipt(String(material.id), taskId)) : undefined;
+      const nativeVersionId = copy && readableTasks.get(copy) === taskId ? copy : undefined;
+      // Display identity and transfer state only; the publisher's storage profile and object key stay in stored state.
+      const { id, version, name, mimeType, size } = frame.file;
+      return { ...frame, file: { id, version, name, mimeType, size, state: material ? String(material.state) : "unavailable", ...(nativeVersionId ? { nativeVersionId } : {}) } };
+    };
+    // A visible summary lists only the issues this account receives; ids of hidden issues are not sent.
+    const visibleIssueIds = new Set(scoped.feedback.filter(note => note.revisionId !== undefined).map(note => note.id));
+    const feedback = scoped.feedback.map(note => {
+      if (!note.files?.length && !note.frames?.length && !note.issueIds) return note;
+      const { issueIds, ...rest } = note;
+      const visibleIds = issueIds?.filter(id => visibleIssueIds.has(id)) ?? [];
+      return {
+        ...rest,
+        ...(visibleIds.length ? { issueIds: visibleIds } : {}),
+        ...(note.files?.length ? { files: note.files.map(file => {
+          const id = materialId(projectId, String(row.source_revision), file, "deseret_to_aigc", note.packageId);
+          return { ...file, ...receipt(activePackages.has(note.packageId) ? guidance.get(id) : undefined) };
+        }) } : {}),
+        ...(note.frames?.length ? { frames: note.frames.map(frame => projectFrame(frame, note.packageId, issueTask(note))) } : {}),
+      };
     });
     const refreshed = await deps.projectContext(email, projectId, false);
     const latestTasks = role === "lead" ? [] : (await db.prepare(`SELECT id FROM language_projects WHERE project_id=? AND ${role === "producer" ? "editor_email" : "reviewer_email"}=? ORDER BY id`).bind(projectId, email).all<Row>()).results;

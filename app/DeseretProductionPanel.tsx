@@ -539,7 +539,13 @@ function DeseretProductionState({
               </p>
             ))}
           {!!record.files?.length && <DeseretBriefFiles files={record.files} visible locale={locale} />}
-          {record.seconds !== undefined && <small>{record.seconds}s</small>}
+          {record.seconds !== undefined && <small>{record.endSeconds !== undefined ? `${record.seconds}s–${record.endSeconds}s` : `${record.seconds}s`}</small>}
+          {record.frames?.map((frame, index) => (
+            <div key={`${frame.file.id}:${index}`} className="deseret-revision-frame">
+              <small>{zh ? "截图时间" : "Frame at"} {frame.seconds}s{frame.caption ? ` · ${frame.caption}` : ""}</small>
+              <DeseretBriefFiles files={[frame.file]} visible locale={locale} />
+            </div>
+          ))}
         </blockquote>
       ))}
       {history.packages.length > 0 && (

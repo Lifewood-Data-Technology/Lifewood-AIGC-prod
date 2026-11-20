@@ -6,6 +6,7 @@ import { guardedMutation } from "../db/mutation-guard";
 import { parseIntegrationConfig, resolveIntegrationEndpoint, signIntegrationRequest, type HandoffMaterial } from "../lib/deseret-integration-contract";
 import { createDeseretMaterialTransfer, readMaterialTransferConfig } from "./deseret-material-transfer";
 import { nativeIntegrationFiles } from "../db/deseret-integration-runtime";
+import { reusableIncomingVersion } from "../db/deseret-native-files";
 import { storedUploadFile } from "./verified-upload";
 import { waitUntil, shuttingDown } from "./node-environment";
 import { PublicError } from "../lib/security-controls";
@@ -35,7 +36,7 @@ export function startDeseretIntegrationMaintenance() {
         integrity: native.sha256.startsWith("wasabi-sha256-parts-v1:") ? { algorithm: "wasabi-sha256-parts-v1", value: native.sha256.slice("wasabi-sha256-parts-v1:".length) } : { algorithm: "sha256", value: native.sha256 },
       };
     },
-    async registerIncoming(projectId, jobId, material: HandoffMaterial, sourceRevision, leaseId, jobSignal) {
+    async registerIncoming(projectId, jobId, material: HandoffMaterial, sourceRevision, leaseId, jobSignal, taskIds) {
       const context = await deseretServiceProjectContext(projectId, "files.upload");
       const bucket = productionStagingBucket();
       const head = await bucket.head(material.objectKey);
@@ -46,13 +47,14 @@ export function startDeseretIntegrationMaintenance() {
         sql: "EXISTS(SELECT 1 FROM deseret_project_links link JOIN deseret_material_tasks task ON task.project_id=link.id WHERE link.id=? AND link.source_revision=? AND json_extract(link.state_json,'$.intake')<>'needsSupplement' AND task.id=? AND task.lease_id=? AND task.state='running')",
         values: [projectId, sourceRevision, jobId, leaseId],
       };
-      const tasks = (await db.prepare("SELECT id FROM language_projects WHERE project_id=? ORDER BY id").bind(projectId).all<{ id: string }>()).results;
-      for (const task of tasks) {
+      // The worker computes the receiving tasks (incomingMaterialTaskIds): every task for shared materials,
+      // only the issue scenes' tasks for final revision frames. Receipts and reuse stay per task.
+      for (const task of taskIds.map(id => ({ id }))) {
         if (jobSignal.aborted || shuttingDown()) throw new DOMException("Integration is stopping.", "AbortError");
         const receipt = `material:${stableId(`${jobId}:${task.id}`)}`;
         if (await db.prepare("SELECT id FROM deseret_inbox WHERE id=? AND sender='native-material'").bind(receipt).first()) continue;
-        const matching = await db.prepare("SELECT version.id,storage.object_key,storage.etag FROM aigc_file_versions version JOIN aigc_files logical ON logical.id=version.file_id JOIN aigc_storage_objects storage ON storage.id=version.storage_object_id WHERE logical.language_project_id=? AND logical.deleted_at IS NULL AND version.original_name=? AND version.checksum_sha256=? AND version.size_bytes=? ORDER BY version.created_at DESC LIMIT 1")
-          .bind(task.id, material.name, checksum, material.size).first<{ id: string; object_key: string; etag: string }>();
+        // Reuse only a live copy already in this task's 02_客户素材 folder; a same-name, same-SHA draft elsewhere is not reused.
+        const matching = await reusableIncomingVersion(db, projectId, task.id, material, checksum);
         if (matching) {
           const existing = await bucket.head(matching.object_key);
           if (!existing || existing.size !== material.size || existing.etag.replaceAll('"', "") !== matching.etag.replaceAll('"', "")) throw new PublicError("The existing native material requires storage reconciliation.", 409, "TRANSFER_SOURCE_CHANGED");

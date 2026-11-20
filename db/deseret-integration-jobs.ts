@@ -19,7 +19,8 @@ export type DeseretJobDependencies = {
   planTransfer(input: MaterialTransferInput): MaterialTransferPlan;
   transferFile(input: MaterialTransferInput, plan: MaterialTransferPlan): Promise<HandoffMaterial>;
   sourceReceipt(projectId: string, file: HandoffMaterial): Promise<MaterialTransferInput["sourceReceipt"]>;
-  registerIncoming(projectId: string, jobId: string, file: HandoffMaterial, sourceRevision: string, leaseId: string, signal: AbortSignal): Promise<void>;
+  /** Registers the copied material in exactly `taskIds`, as computed by `incomingMaterialTaskIds`. */
+  registerIncoming(projectId: string, jobId: string, file: HandoffMaterial, sourceRevision: string, leaseId: string, signal: AbortSignal, taskIds: string[]): Promise<void>;
   projectAuthority(projectId: string): Promise<{ sql: string; values: (string | number | null)[] }>;
   withProject<T>(projectId: string, work: () => Promise<T>): Promise<T>;
   deliver(body: string, eventId: string, signal: AbortSignal): Promise<void>;
@@ -32,6 +33,34 @@ const errorCode = (error: unknown) => {
   const code = (error as { code?: unknown })?.code;
   return typeof code === "string" && /^[A-Z0-9_]{1,80}$/.test(code) ? code : "INTEGRATION_JOB_FAILED";
 };
+const jobError = (message: string, code: string) => Object.assign(new Error(message), { code });
+
+/**
+ * Native tasks whose `02_客户素材` folder receives one incoming Deseret material.
+ * - Handoff materials and ordinary review attachments keep the shared rule: every task of the project.
+ * - A final QA revision frame goes only to the language task of each referencing issue's exact reviewed scene
+ *   (`package.scenes[sceneId@sceneVersion].languageTaskId`); one image used by several issues gets the union.
+ * A frame that cannot be bound to a current task of this project fails the job (retried automatically and by
+ * `materials.retry`) instead of being spread to other tasks or dropped.
+ */
+export async function incomingMaterialTaskIds(db: Database, projectId: string, packageId: string | null, file: Pick<HandoffMaterial, "id" | "version">) {
+  const projectTasks = (await db.prepare("SELECT id FROM language_projects WHERE project_id=? ORDER BY id").bind(projectId).all<{ id: string }>()).results.map(task => String(task.id));
+  if (!packageId) return projectTasks;
+  const link = await db.prepare("SELECT state_json FROM deseret_project_links WHERE id=?").bind(projectId).first<Row>();
+  const state = link ? readDeseretState(link) : undefined;
+  const pack = state?.packages.find(item => item.id === packageId);
+  // Withdrawal cancels the job in the same transaction; a running lease then only has to stop.
+  if (pack?.withdrawn) throw jobError("The review publication was withdrawn.", "STALE_RECORD");
+  if (!state || !pack) throw jobError("The review publication of this material is unavailable.", "DESERET_FRAME_TASK_UNBOUND");
+  const same = (item: Pick<HandoffMaterial, "id" | "version">) => item.id === file.id && item.version === file.version;
+  const notes = [...state.feedback, ...state.authorFeedback].filter(note => note.packageId === packageId);
+  if (notes.some(note => note.files?.some(same))) return projectTasks;
+  const bound = notes.filter(note => note.frames?.some(frame => same(frame.file))).map(note => note.revisionId === undefined ? undefined
+    : pack.scenes.find(scene => scene.id === note.sceneId && scene.version === note.sceneVersion)?.languageTaskId);
+  if (!bound.length || bound.some(taskId => !taskId || !projectTasks.includes(taskId)))
+    throw jobError("The revision frame is not bound to a current task of this project.", "DESERET_FRAME_TASK_UNBOUND");
+  return [...new Set(bound as string[])].sort();
+}
 
 export function createDeseretIntegrationJobs(deps: DeseretJobDependencies) {
   const { db } = deps;
@@ -47,7 +76,7 @@ export function createDeseretIntegrationJobs(deps: DeseretJobDependencies) {
       AccessDenied: "ACCESS_DENIED", NoSuchKey: "STORAGE_OBJECT_MISSING", NoSuchUpload: "STORAGE_UPLOAD_MISSING",
       InvalidAccessKeyId: "STORAGE_AUTH_FAILED", SignatureDoesNotMatch: "STORAGE_AUTH_FAILED",
     };
-    const knownCodes = new Set(["ACCESS_DENIED", "DESERET_OWNER_UNAVAILABLE", "OPERATION_ABORTED", "STALE_RECORD", "TRANSFER_NOT_CONFIGURED", "TRANSFER_REGION_UNSUPPORTED", "TRANSFER_INTEGRITY_UNAVAILABLE", "TRANSFER_PLAN_MISMATCH", "TRANSFER_SOURCE_CHANGED", "TRANSFER_DESTINATION_CONFLICT", "ECONNRESET", "ETIMEDOUT", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"]);
+    const knownCodes = new Set(["ACCESS_DENIED", "DESERET_OWNER_UNAVAILABLE", "OPERATION_ABORTED", "STALE_RECORD", "TRANSFER_NOT_CONFIGURED", "TRANSFER_REGION_UNSUPPORTED", "TRANSFER_INTEGRITY_UNAVAILABLE", "TRANSFER_PLAN_MISMATCH", "TRANSFER_SOURCE_CHANGED", "TRANSFER_DESTINATION_CONFLICT", "DESERET_FRAME_TASK_UNBOUND", "ECONNRESET", "ETIMEDOUT", "ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"]);
     const code = typeof details.name === "string" && Object.hasOwn(knownNames, details.name) ? knownNames[details.name]
       : typeof details.code === "string" && knownCodes.has(details.code) ? details.code : "INTEGRATION_JOB_FAILED";
     const event: JobDiagnostic = {
@@ -161,7 +190,10 @@ export function createDeseretIntegrationJobs(deps: DeseretJobDependencies) {
           const active = await db.prepare("SELECT task.id FROM deseret_material_tasks task JOIN deseret_project_links link ON link.id=task.project_id WHERE task.id=? AND task.lease_id=? AND task.state='running' AND link.source_revision=task.source_revision AND json_extract(link.state_json,'$.intake')<>'needsSupplement'").bind(task.id, lease).first();
           if (!active) return;
           operation = "register_material";
-          if (task.direction === "deseret_to_aigc") await deps.registerIncoming(String(task.project_id), String(task.id), copied, String(task.source_revision), lease, jobSignal);
+          if (task.direction === "deseret_to_aigc") {
+            const taskIds = await incomingMaterialTaskIds(db, String(task.project_id), task.package_id ? String(task.package_id) : null, source);
+            await deps.registerIncoming(String(task.project_id), String(task.id), copied, String(task.source_revision), lease, jobSignal, taskIds);
+          }
           operation = "complete_material";
           const authority = await deps.projectAuthority(String(task.project_id));
           await guardedMutation(db, `${authority.sql} AND EXISTS(SELECT 1 FROM deseret_material_tasks task JOIN deseret_project_links link ON link.id=task.project_id WHERE task.id=? AND task.lease_id=? AND task.state='running' AND link.source_revision=task.source_revision AND json_extract(link.state_json,'$.intake')<>'needsSupplement')`, [...authority.values, String(task.id), lease], [

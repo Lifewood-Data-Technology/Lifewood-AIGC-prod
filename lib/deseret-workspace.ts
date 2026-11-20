@@ -40,7 +40,28 @@ export type DeseretFeedback = {
   corrections?: Record<string, string>;
   files?: (HandoffMaterial & { state?: string; nativeVersionId?: string })[];
   processing?: { decision: "noted" | "revision_requested"; note: string; processedBy: string; processedAt: string };
+  /** Final QA revision issue: the reviewer role that raised it. */
+  role?: DeseretIssueRole;
+  /** Final QA revision issue: the exact reviewed scene version. */
+  sceneVersion?: number;
+  /** End of a reviewed interval; `seconds` is its start. */
+  endSeconds?: number;
+  /** Final QA revision issue: frame images with their own times. */
+  frames?: DeseretRevisionFrame[];
+  /** On an issue: the QA summary feedback id (the signed conclusion event id) it was returned with. */
+  revisionId?: string;
+  /** On a QA summary: the issue ids returned with it, in the publisher's order. */
+  issueIds?: string[];
 };
+export type DeseretIssueRole = "marketing" | "creative" | "publisher_qa";
+/**
+ * A frame image. Stored state keeps the canonical Deseret guidance manifest. The workspace projection keeps
+ * only its display identity, transfer state and, when this account may read it, the native copy registered
+ * in the issue's own task (`nativeVersionId`); storage profiles and object keys are not projected.
+ */
+export type DeseretFrameFile = Pick<HandoffMaterial, "id" | "version" | "name" | "mimeType" | "size"> &
+  Partial<Omit<HandoffMaterial, "id" | "version" | "name" | "mimeType" | "size">> & { state?: string; nativeVersionId?: string };
+export type DeseretRevisionFrame = { seconds: number; caption?: string; file: DeseretFrameFile };
 export type DeseretIntegrationState = {
   stage: DeseretStage;
   intake: "pending" | "accepted" | "needsSupplement";

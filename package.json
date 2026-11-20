@@ -9,6 +9,7 @@
     "build": "node scripts/mysql-local.mjs build",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "test": "node --experimental-transform-types --disable-warning=ExperimentalWarning --import ./tests/support/register.mjs --test \"tests/**/*.test.ts\"",
     "db:mysql:migrate": "node --experimental-strip-types scripts/mysql-migrate.mjs",
     "db:mysql:init": "node --experimental-strip-types scripts/mysql-init.mjs",
     "start:production": "node scripts/mysql-local.mjs start production"
