@@ -206,11 +206,11 @@ export function createDeseretIntegrationJobs(deps: DeseretJobDependencies) {
       pack.files = pack.files.map(file => ({ ...file, ...validateHandoffManifest([JSON.parse(String(publicationTasks.find(task => task.file_id === file.id)!.target_json))])[0] }));
       pack.filesReady = true;
       const scenes = pack.scenes.map(scene => ({
-        id: scene.id, number: scene.order, version: scene.version, duration: scene.duration,
+        id: scene.id, number: scene.order, version: scene.version, duration: scene.duration, languageTaskId: scene.languageTaskId,
         narration: { en: scene.script, zh: "" }, characterIds: scene.characterIds,
         video: { id: scene.fileVersionId, version: pack.files.find(file => file.id === scene.fileVersionId)!.version, kind: "video" },
       }));
-      const published = { id: pack.id, phase: pack.phase, version: pack.version, publicationId: pack.publicationId, publishedAt: pack.publishedAt, scenes };
+      const published = { id: pack.id, phase: pack.phase, version: pack.version, publicationId: pack.publicationId, publishedAt: pack.publishedAt, scenes, ...(pack.characters ? { characters: pack.characters } : {}) };
       statements.push(deseretOutboxStatement(db, projectId, String(row.deseret_project_id), String(row.source_revision), "review.published", { package: published, files: pack.files }, iso()));
       changed = true;
     }

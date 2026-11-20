@@ -18,6 +18,7 @@ export type DeseretReviewPackage = {
   phase: "storyboard" | "final";
   version: number;
   publicationId: string;
+  characters?: { id: string; name: string }[];
   publishedAt: string;
   filesReady?: boolean;
   scenes: DeseretScene[];
@@ -37,7 +38,7 @@ export type DeseretFeedback = {
   mode?: "comment" | "time" | "revision" | "flag";
   targets?: string[];
   corrections?: Record<string, string>;
-  files?: HandoffMaterial[];
+  files?: (HandoffMaterial & { state?: string; nativeVersionId?: string })[];
   processing?: { decision: "noted" | "revision_requested"; note: string; processedBy: string; processedAt: string };
 };
 export type DeseretIntegrationState = {
@@ -89,7 +90,9 @@ export function scopeDeseretReview(history: ReviewHistory, canRead: (taskId: str
     const scenes = pack.scenes.filter(visibleScene);
     const files = pack.files.filter(file => canRead(file.languageTaskId, file.fileVersionId));
     // Historical final packages can identify the reviewed cut by its file alone.
-    return scenes.length || (pack.phase === "final" && files.length) ? [{ ...pack, scenes, files }] : [];
+    const ids = new Set(scenes.flatMap(scene => scene.characterIds ?? []));
+    return scenes.length || (pack.phase === "final" && files.length)
+      ? [{ ...pack, scenes, files, ...(pack.characters ? {characters: pack.characters.filter(character => ids.has(character.id))} : {}) }] : [];
   });
   const packageScenes = new Map(packages.map(pack => [pack.id, new Set(pack.scenes.map(scene => scene.id))]));
   const visibleNote = (note: DeseretFeedback) => {

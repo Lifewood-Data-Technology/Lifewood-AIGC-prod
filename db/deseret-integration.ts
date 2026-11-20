@@ -7,7 +7,7 @@ import { prepareAuditStatement } from "./audit-write";
 import { PublicError } from "../lib/security-controls";
 import { progressEditableStatuses } from "../lib/task-file-access";
 import { validCalendarDate } from "../lib/employee-workflow";
-import { producerBoundValue, producerBoundValues, producerDurationSeconds } from "../lib/deseret-producer-brief";
+import { approvedFileIds, approvedSceneCharacters, producerBoundValue, producerBoundValues, producerDurationSeconds, versionedProductionLanguage } from "../lib/deseret-producer-brief";
 import { integrationBodyHash, validateHandoffManifest, type HandoffMaterial, type IntegrationConfig, type IntegrationEnvelope } from "../lib/deseret-integration-contract";
 import type { DeseretFeedback, DeseretIntegrationState, DeseretPublishedFile, DeseretReviewPackage, DeseretScene, DeseretWorkspace } from "../lib/deseret-workspace";
 
@@ -138,8 +138,16 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
     const replay = await previousResponse(db, envelope.eventId, "deseret", hash);
     if (replay) return replay;
     const payload = envelope.payload;
+    const approvedIds = approvedFileIds(payload.brief);
+    if (approvedIds && (validated.length !== approvedIds.size || validated.some(file => !approvedIds.has(file.id)) ||
+        new Set(validated.map(file => file.id)).size !== validated.length))
+      reject("The file list must match the approved answers.", "DESERET_BRIEF_FILES_MISMATCH", 422);
     const project = payload.project as Row;
     if (!Array.isArray(project.languageCodes) || project.languageCodes.length !== 1) reject("This integration handoff requires one approved content language.", "DESERET_LANGUAGE_SCOPE_UNSUPPORTED", 422);
+    const language = versionedProductionLanguage(payload.brief) ??
+      (object(payload.brief) ? payload.brief.publisherProductionLanguage : undefined);
+    if (language !== undefined && language !== project.languageCodes[0])
+      reject("The task language must match the publisher selection.", "DESERET_LANGUAGE_MISMATCH", 422);
     const requirements = productionRequirements(payload.brief, String(project.title));
     const durationSeconds = producerDurationSeconds(payload.brief);
     const version = Number(payload.submissionVersion);
@@ -314,7 +322,7 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
       ...state.packages.filter(pack => pack.phase === "final").flatMap(pack => pack.files.map(file => file.fileVersionId)),
     ]);
     const files = [...new Map([...candidates, ...referencedFiles].map(file => [file.id, file])).values()];
-    const materials = (await db.prepare("SELECT id,manifest_json,state FROM deseret_material_tasks WHERE project_id=? AND source_revision=? AND direction='deseret_to_aigc' AND package_id IS NULL").bind(projectId, row.source_revision).all<Row>()).results;
+    const materials = (await db.prepare("SELECT id,package_id,manifest_json,state FROM deseret_material_tasks WHERE project_id=? AND source_revision=? AND direction='deseret_to_aigc'").bind(projectId, row.source_revision).all<Row>()).results;
     // Resolve exact registration receipts, never guess a version by filename or object key.
     const receiptIds = new Map<string,string[]>();
     for (const material of materials) receiptIds.set(String(material.id), taskRows.map(task => {
@@ -325,6 +333,12 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
     const registered = new Map(registration.map(item => [String(item.id),String(JSON.parse(String(item.response_json)).id || "")]));
     const readableMaterials = registered.size ? await deps.nativeFiles(context,[...new Set(registered.values())].filter(Boolean)) : [];
     const readableIds = new Set(readableMaterials.map(file => file.id));
+    function receipt(material: Row | undefined) {
+      if (!material) return { state: "unavailable", nativeVersionId: undefined };
+      const nativeVersionId = material.state === "ready" ? (receiptIds.get(String(material.id)) ?? [])
+        .map(id => registered.get(id)).find(id => id && readableIds.has(id)) : undefined;
+      return { state: String(material.state), nativeVersionId };
+    }
     const snapshot = JSON.parse(String(row.snapshot_json)) as Row;
     const actions: DeseretWorkspace["actions"] = [];
     if (role === "lead" && state.stage !== "archived") {
@@ -344,14 +358,22 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
     const reviewFileTasks = new Map(reviewFiles.map(file => [file.id, file.languageTaskId]));
     const scoped = role === "lead" ? state : scopeDeseretReview(state, (taskId, fileVersionId) =>
       taskIds.has(taskId) && (role !== "qc" || reviewFileTasks.get(fileVersionId) === taskId));
+    const guidance = new Map(materials.filter(item => item.package_id != null).map(item => [String(item.id), item]));
+    const activePackages = new Set(scoped.packages.filter(pack => !pack.withdrawn).map(pack => pack.id));
+    const feedback = scoped.feedback.map(note => !note.files?.length ? note : {
+      ...note, files: note.files.map(file => {
+        const id = materialId(projectId, String(row.source_revision), file, "deseret_to_aigc", note.packageId);
+        return { ...file, ...receipt(activePackages.has(note.packageId) ? guidance.get(id) : undefined) };
+      }),
+    });
     const refreshed = await deps.projectContext(email, projectId, false);
     const latestTasks = role === "lead" ? [] : (await db.prepare(`SELECT id FROM language_projects WHERE project_id=? AND ${role === "producer" ? "editor_email" : "reviewer_email"}=? ORDER BY id`).bind(projectId, email).all<Row>()).results;
     if (refreshed.actor.access !== context.actor.access || (role !== "lead" && taskRows.some(task => !latestTasks.some(latest => latest.id === task.id)))) reject("Project access changed. Reload the project.", "DESERET_FORBIDDEN", 403);
     return {
-      ...state, ...scoped,
+      ...state, ...scoped, feedback,
       projectId, projectTitle: object(snapshot.project) && typeof snapshot.project.title === "string" ? snapshot.project.title : String(context.project.name), deseretProjectId: String(row.deseret_project_id), sourceRevision: String(row.source_revision), submissionVersion: Number(row.submission_version), role,
-      brief: object(snapshot.brief) ? snapshot.brief : {}, materialManifest: materials.map(item => ({ ...JSON.parse(String(item.manifest_json)), state: String(item.state),
-        ...(item.state === "ready" ? { nativeVersionId: (receiptIds.get(String(item.id)) || []).map(id=>registered.get(id)).find(id=>id && readableIds.has(id)) } : {}) })),
+      brief: object(snapshot.brief) ? snapshot.brief : {}, materialManifest: materials.filter(item => item.package_id == null)
+        .map(item => ({ ...JSON.parse(String(item.manifest_json)), ...receipt(item) })),
       tasks: taskRows.map(task => ({ id: String(task.id), videoId: String(task.video_id), language: String(task.language), languageCode: String(task.language_code), status: String(task.status), editorEmail: task.editor_email ? String(task.editor_email) : undefined, reviewerEmail: task.reviewer_email ? String(task.reviewer_email) : undefined })),
       fileCandidates: files.map(file => ({ id: file.id, version: file.version, name: file.name, languageTaskId: file.languageTaskId, size: file.size, mimeType: file.mimeType, sha256: file.sha256, qualityPassed: file.qualityPassed, finalSubmission: file.finalSubmission || previouslyPublishedFinal(state, file), storageReady: file.storageReady })), actions,
       transfers: role === "lead" ? (await db.prepare("SELECT id,direction,package_id,manifest_json,state,attempts,last_error FROM deseret_material_tasks WHERE project_id=? AND source_revision=? ORDER BY created_at,id").bind(projectId, row.source_revision).all<Row>()).results.map(item => ({ id: String(item.id), direction: String(item.direction), packageId: item.package_id ? String(item.package_id) : undefined, name: String(JSON.parse(String(item.manifest_json)).name), state: String(item.state), attempts: Number(item.attempts), lastError: item.last_error ? String(item.last_error) : undefined })) : [],
@@ -399,6 +421,9 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
       state.stage = state.packages.at(-1)?.phase === "final" ? "final_production" : "production";
     } else if (input.action === "scene.save") {
       if (!text(payload.id, 100) || !identity.test(payload.id) || !text(payload.script, 20000) || !String(payload.script).trim() || typeof payload.duration !== "number" || !Number.isFinite(payload.duration) || payload.duration <= 0 || payload.duration > 3600 || !Number.isSafeInteger(payload.order) || Number(payload.order) < 1 || !Array.isArray(payload.characterIds) || payload.characterIds.length > 100 || payload.characterIds.some(item => !text(item, 120)) || !text(payload.voiceId, 120)) reject("Check the scene details.");
+      const approvedIds = new Set(approvedSceneCharacters(current.brief).map(character => character.id));
+      const characterIds = payload.characterIds as string[];
+      if (new Set(characterIds).size !== characterIds.length || characterIds.some(id => !approvedIds.has(id))) reject("Select characters from the approved brief.", "DESERET_SCENE_CHARACTER_INVALID", 422);
       const file = (await deps.nativeFiles(context, [String(payload.fileVersionId)])).find(item => item.id === payload.fileVersionId);
       if (!file || !file.mimeType.startsWith("video/") || !file.storageReady) reject("Choose a registered video version from the assigned native task.");
       const editableTask = await db.prepare("SELECT status FROM language_projects WHERE id=? AND project_id=? AND editor_email=?").bind(file.languageTaskId, projectId, email).first<{ status: string }>();
@@ -471,7 +496,10 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
       }
       const version = 1 + state.packages.filter(pack => pack.phase === phase).length;
       const packageFiles: DeseretPublishedFile[] = verified.map(file => ({ id: file.id, fileVersionId: file.id, languageTaskId: file.languageTaskId, version: file.version, name: file.name, size: file.size, purpose: phase === "final" ? "final_video" : "storyboard_video", mimeType: file.mimeType, storageProfileId: file.storageProfileId, objectKey: file.objectKey, ...(/^[a-f0-9]{64}$/.test(file.sha256) ? { sha256: file.sha256 } : { integrity: { algorithm: "wasabi-sha256-parts-v1" as const, value: file.sha256.replace(/^wasabi-sha256-parts-v1:/, "") } }) }));
-      const pack: DeseretReviewPackage = { id: randomUUID(), phase: phase as "storyboard" | "final", version, publicationId: randomUUID(), publishedAt: at, scenes, files: packageFiles, filesReady: false };
+      const selectedIds = new Set(scenes.flatMap(scene => scene.characterIds));
+      const characters = approvedSceneCharacters(current.brief).filter(character => selectedIds.has(character.id));
+      if (characters.length !== selectedIds.size) reject("Update the scene characters before publishing.", "DESERET_SCENE_CHARACTER_INVALID", 422);
+      const pack: DeseretReviewPackage = { characters, id: randomUUID(), phase: phase as "storyboard" | "final", version, publicationId: randomUUID(), publishedAt: at, scenes, files: packageFiles, filesReady: false };
       if (Buffer.byteLength(JSON.stringify({ scenes, files: packageFiles }), "utf8") > 850000) reject("The publication metadata exceeds the service request limit.", "DESERET_PACKAGE_TOO_LARGE", 413);
       state.packages.push(pack);
       state.stage = phase === "final" ? "final_review" : "storyboard_review";

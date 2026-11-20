@@ -324,7 +324,7 @@ export default function ProjectManagementWorkspace({ platform: data, locale, sel
     link.click();
     setTimeout(()=>URL.revokeObjectURL(url),20000);
   };
-  return <div className="pm-workspace">
+  return <div className="pm-workspace" data-workflow={isDeseret ? "deseret" : undefined}>
     {project && <nav className="pm-breadcrumb" aria-label={t("面包屑导航","Breadcrumb")}><button className="pm-link" onClick={onBack}>{t("项目管理","Project management")}</button><span> / </span><span>{str(project.client_name)}</span><span> / </span><span>{str(project.name)}</span></nav>}
     <div className="page-heading"><div><span className="eyebrow">Lifewood AIGC</span><h1>{project ? str(project.name) : t("项目管理","Project management")}</h1></div>{project&&<div className="pm-actions">{isDeseret && <button onClick={()=>exportRows()}>{t("导出进度明细","Export progress")}</button>}<button onClick={()=>{setTeamOpen(true);setMember("");}}>{t("人员负载","Team workload")}</button>{canManage && (project ? <><button onClick={()=>setConfig({type:"project",project})}>{t("编辑项目","Edit project")}</button><button className="pm-primary" disabled={closed({status:projectStatus(project)})} onClick={()=>setConfig({type:"video",project})}>{t("添加视频","Add video")}</button>{projectMore(project)}</> : null)}</div>}</div>
     {archiveError && <InlineError message={archiveError}/>}
