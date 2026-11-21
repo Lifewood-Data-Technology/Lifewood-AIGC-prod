@@ -15,8 +15,20 @@ function collect(value: unknown, found: Input[], key = "") {
   if (value.startsWith("[") || value.startsWith("{")) { try { collect(JSON.parse(value), found, key); } catch (error) { if (error instanceof PublicError) throw error; } return; }
   if (value && value.length <= 255) found.push({ key, value });
 }
-async function resolveInputs(db: Database, inputs: Input[]) {
+/**
+ * Scopes a request touches. A video or language deletion locks only its own scopes, so every reference that can
+ * reach one (video ID, share token, delivery, publication, file, folder, task) maps to its language and video
+ * scopes. Writes naming a video or project also take the scopes of the languages and videos below it, so a
+ * cascade (such as a project-wide deadline change) never writes into a video or language being deleted.
+ */
+async function resolveInputs(db: Database, inputs: Input[], writes = false) {
   const out = new Set<string>();
+  const below = async (projectId?: string | null, videoId?: string | null) => {
+    if (!writes || (!projectId && !videoId)) return;
+    const children = (await db.prepare(`SELECT id,video_id FROM language_projects WHERE ${videoId ? "video_id=?" : "project_id=?"}`).bind(videoId ?? projectId).all<{ id: string; video_id: string | null }>()).results;
+    for (const row of children) { out.add(`language:${row.id}`); if (row.video_id) out.add(`video:${row.video_id}`); }
+    if (!videoId) for (const row of (await db.prepare("SELECT id FROM project_videos WHERE project_id=?").bind(projectId).all<{ id: string }>()).results) out.add(`video:${row.id}`);
+  };
   for (const id of [...new Set(inputs.map(input => input.value))]) {
     // IDs are looked up in fixed, bounded tables. Persisted parentage determines scope.
     const common = await businessScopes(db, { customerId: undefined, projectId: undefined, taskId: id, fileId: id, folderId: id, requestId: id });
@@ -24,15 +36,20 @@ async function resolveInputs(db: Database, inputs: Input[]) {
     const client = await db.prepare("SELECT id FROM clients WHERE id=?").bind(id).first<{id:string}>();
     if (client) out.add(`customer:${client.id}`);
     const project = await db.prepare("SELECT id,client_id FROM projects WHERE id=?").bind(id).first<{id:string;client_id:string}>();
-    if (project) { out.add(`project:${project.id}`); out.add(`customer:${project.client_id}`); }
+    if (project) { out.add(`project:${project.id}`); out.add(`customer:${project.client_id}`); await below(project.id); }
     const derived = (await db.prepare("SELECT language_project_id FROM production_staged_files WHERE id=? UNION SELECT language_project_id FROM production_checkpoints WHERE id=? UNION SELECT language_project_id FROM handover_records WHERE id=? UNION SELECT language_project_id FROM material_standards WHERE id=? UNION SELECT language_project_id FROM quality_rounds WHERE id=?").bind(id,id,id,id,id).all<{language_project_id:string}>()).results;
     for (const row of derived) (await businessScopes(db, { taskId: row.language_project_id })).forEach(value => out.add(value));
     const child = (await db.prepare("SELECT project_id FROM project_videos WHERE id=? UNION SELECT project_id FROM share_links WHERE id=? OR token=? UNION SELECT project_id FROM deliveries WHERE id=? UNION SELECT project_id FROM publish_records WHERE id=?").bind(id,id,id,id,id).all<{project_id:string}>()).results;
     for (const row of child) (await businessScopes(db, { projectId: row.project_id })).forEach(value => out.add(value));
+    // The video itself, and the file, task or video behind a share token, delivery or publication.
+    const video = await db.prepare("SELECT id FROM project_videos WHERE id=?").bind(id).first<{id:string}>();
+    if (video) { out.add(`video:${video.id}`); await below(null, video.id); }
+    const reached = (await db.prepare("SELECT file_id,NULL AS task_id FROM share_links WHERE id=? OR token=? UNION SELECT file_id,language_project_id FROM deliveries WHERE id=? UNION SELECT file_id,NULL FROM publish_records WHERE id=?").bind(id,id,id,id).all<{file_id:string|null;task_id:string|null}>()).results;
+    for (const row of reached) (await businessScopes(db, { ...(row.file_id ? { fileId: row.file_id } : {}), ...(row.task_id ? { taskId: row.task_id } : {}) })).forEach(value => out.add(value));
     const document = await db.prepare("SELECT request_id FROM project_request_documents WHERE id=?").bind(id).first<{request_id:string}>();
     if (document) (await businessScopes(db, { requestId: document.request_id })).forEach(value => out.add(value));
-    // Deleted roots retain tombstones even when no business row remains.
-    out.add(`customer:${id}`); out.add(`project:${id}`);
+    // Deleted roots retain tombstones even when no business row remains, including a deleted video or language.
+    out.add(`customer:${id}`); out.add(`project:${id}`); out.add(`video:${id}`); out.add(`language:${id}`);
   }
   return [...out];
 }
@@ -74,7 +91,7 @@ async function admittedBusinessLifecycleResponse(request: Request, db: Database,
         }
       }
     }
-    const scopes = await resolveInputs(db, inputs);
+    const scopes = await resolveInputs(db, inputs, writes);
     await assertBusinessAvailable(db, scopes);
     // Media may generate a thumbnail; workspace reads may repair system folders.
     // Both must finish before a deletion is allowed to freeze its inventory.

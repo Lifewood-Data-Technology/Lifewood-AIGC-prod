@@ -137,6 +137,7 @@ export type DeseretWorkspace = DeseretIntegrationState & {
   actions: ("intake.accept" | "intake.requestSupplement" | "scene.save" | "package.publish" | "package.withdraw" | "revision.assign" | "materials.retry" | "outbox.retry" | "archive.register" | "handover.verify")[];
   /** Internal only (never sent to Deseret): production archives of the tasks this account may continue. QC: none. */
   archives?: DeseretArchive[];
+  handoverFiles?: DeseretHandoverFile[];
   /** Internal only: live formal versions this account may archive, by task. */
   archiveCandidates?: DeseretArchiveCandidate[];
   /** Internal only: Deseret editor handovers with the incoming editor's verification. */
@@ -180,6 +181,7 @@ export function isStoryboardFileVersion(state: Pick<DeseretIntegrationState, "sc
 }
 
 /** One file version referenced by an internal production archive; `live` is recomputed whenever it is read. */
+export type DeseretHandoverFile = DeseretArchiveFile & { taskId: string; size: number; kind: string; category: string; currentVersionId: string };
 export type DeseretArchiveFile = { id: string; name: string; version: number; mimeType: string; live: boolean };
 /**
  * Internal production archive of one language task: the engineering file version to continue from, an optional

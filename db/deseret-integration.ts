@@ -1,3 +1,4 @@
+import { deseretHandoverFiles } from "./deseret-handover-files";
 import { finalSubmissionEvidenceSql } from "./deseret-final-provenance";
 import { isStoryboardFileVersion, scopeDeseretReview } from "../lib/deseret-workspace";
 import { createHash, randomUUID } from "node:crypto";
@@ -584,6 +585,7 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
         // Editors see only versions they may already read; the lead keeps project access.
         archiveCandidates: await archiveCandidates(db, projectId, continuityTaskIds, role === "producer" ? productionReadableVersionQuery(email) : undefined),
         handovers,
+        ...(role === "producer" ? { handoverFiles: await deseretHandoverFiles(db, email, projectId) } : {}),
         ...(role === "lead" ? { packageSources: await packageSources(db, projectId) } : {}),
       }),
     };

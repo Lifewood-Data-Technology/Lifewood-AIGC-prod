@@ -1,4 +1,4 @@
-import { getAccount, mutationAuthority, requireCapability, workflowSubmissionDatabase } from "./backend";
+import { getAccount, mutationAuthority, projectSummaryUpdateStatement, requireCapability, workflowSubmissionDatabase } from "./backend";
 import { customerMaintenanceScope } from "./customer-access";
 import { createBusinessDeletionService, type DeletionTarget, type PermanentObjectStore, type UploadCancellation, type UploadCancelOptions } from "./business-deletion";
 import { PublicError } from "../lib/security-controls";
@@ -6,17 +6,21 @@ import { PublicError } from "../lib/security-controls";
 /** The storage implementation is injected only after environment-specific purge verification. */
 export function businessDeletionRuntime(storage: PermanentObjectStore) {
   const db = workflowSubmissionDatabase();
-  return createBusinessDeletionService({ db, storage, async authority(email: string, target: DeletionTarget) {
+  // A video or language is deleted with the authority of the project that owns it.
+  return createBusinessDeletionService({ db, storage, parentSummary: projectId => projectSummaryUpdateStatement(db, projectId), async authority(email: string, target: DeletionTarget) {
     const actor = await getAccount(email);
     if (!actor || !["client", "project"].includes(actor.access)) throw new PublicError("Business access required.", 403);
     const capability = target.kind === "customer" ? "customers.manage" : "projects.manage";
-    if (target.kind === "project" && actor.access !== "project") throw new PublicError("Project management access required.", 403);
+    if (target.kind !== "customer" && actor.access !== "project") throw new PublicError("Project management access required.", 403);
     await requireCapability(actor, capability);
     const account = await db.prepare("SELECT id,management_revision FROM accounts WHERE email=? AND access_group=? AND status='active' AND must_change_password=0").bind(actor.email, actor.access).first<{ id: string; management_revision: number }>();
     if (!account) throw new PublicError("Business access required.", 403);
     const authorized = target.kind === "customer" ? customerMaintenanceScope(actor, "c") : { sql: "c.project_owner_email=?", values: [actor.email] };
     const table = target.kind === "customer" ? "clients" : "projects";
-    const row = await db.prepare(`SELECT id FROM ${table} c WHERE c.id=? AND (${authorized.sql})`).bind(target.id, ...authorized.values).first();
+    const owner = target.kind === "video" || target.kind === "language"
+      ? (await db.prepare(`SELECT project_id FROM ${target.kind === "video" ? "project_videos" : "language_projects"} WHERE id=?`).bind(target.id).first<{ project_id: string }>())?.project_id ?? ""
+      : target.id;
+    const row = owner ? await db.prepare(`SELECT id FROM ${table} c WHERE c.id=? AND (${authorized.sql})`).bind(owner, ...authorized.values).first() : null;
     // A completed target no longer exists. Exact account identity and management revision
     // keep receipt/recovery access private without pretending the target still exists.
     const receipt = !row ? await db.prepare("SELECT id FROM business_deletion_jobs WHERE target_kind=? AND target_id=? AND actor_email=? AND actor_account_id=? AND actor_revision=? AND state='complete'").bind(target.kind, target.id, actor.email, account.id, account.management_revision).first() : null;
@@ -25,7 +29,7 @@ export function businessDeletionRuntime(storage: PermanentObjectStore) {
     // The shared commit guard also catches a role-level capability change in the admin directory,
     // which does not bump the account revision.
     const capabilityGuard = await mutationAuthority(db, actor, capability);
-    return { actor: { email: actor.email, accountId: account.id, revision: account.management_revision, access: actor.access }, condition: `${condition} AND ${capabilityGuard.sql}${row ? ` AND EXISTS(SELECT 1 FROM ${table} c WHERE c.id=? AND (${authorized.sql}))` : ""}`, values: [actor.email, account.id, actor.access, account.management_revision, actor.email, capability, ...capabilityGuard.values, ...(row ? [target.id, ...authorized.values] : [])] };
+    return { actor: { email: actor.email, accountId: account.id, revision: account.management_revision, access: actor.access }, condition: `${condition} AND ${capabilityGuard.sql}${row ? ` AND EXISTS(SELECT 1 FROM ${table} c WHERE c.id=? AND (${authorized.sql}))` : ""}`, values: [actor.email, account.id, actor.access, account.management_revision, actor.email, capability, ...capabilityGuard.values, ...(row ? [owner, ...authorized.values] : [])] };
   }, uploads: {
     // Loaded on demand: proxy-mode environments refuse with DIRECT_TRANSFER_DISABLED, never a fallback.
     // The options carry the reviewed idle state into the upload service's atomic claim; dropping them

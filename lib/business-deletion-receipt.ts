@@ -1,5 +1,6 @@
-export type BusinessDeletionTarget = { id: string; kind: "customer" | "project" };
-export type BusinessDeletionReceipt = BusinessDeletionTarget & { submissionId: string; revision: number; previewHash: string; confirmationName: string };
+export type BusinessDeletionTarget = { id: string; kind: "customer" | "project" | "video" | "language" };
+/** `unlinkShared`: the optional shared links ticked for clean-up (video or language deletion), part of the identity. */
+export type BusinessDeletionReceipt = BusinessDeletionTarget & { submissionId: string; revision: number; previewHash: string; confirmationName: string; unlinkShared?: string[] };
 export const businessDeletionReceiptChanged = "lifewood-business-delete-changed";
 
 export function deletionReceiptKey(owner: string, target: BusinessDeletionTarget) {
@@ -11,7 +12,8 @@ export function isBusinessDeletionReceipt(value: unknown, target: BusinessDeleti
   const row = value as Record<string, unknown>;
   return row.id === target.id && row.kind === target.kind && typeof row.submissionId === "string" && /^[a-z0-9-]{16,100}$/i.test(row.submissionId)
     && typeof row.revision === "number" && Number.isSafeInteger(row.revision) && row.revision > 0
-    && typeof row.previewHash === "string" && /^[a-f0-9]{64}$/i.test(row.previewHash) && typeof row.confirmationName === "string" && Boolean(row.confirmationName);
+    && typeof row.previewHash === "string" && /^[a-f0-9]{64}$/i.test(row.previewHash) && typeof row.confirmationName === "string" && Boolean(row.confirmationName)
+    && (row.unlinkShared === undefined || Array.isArray(row.unlinkShared) && row.unlinkShared.every(item => typeof item === "string"));
 }
 
 /** Receipts identify an earlier attempt; they never grant permission or confirm its result. */

@@ -138,6 +138,17 @@ describe("internal archive section", () => {
     } finally { await unmount(); }
   });
 
+  it("shows the assigned editor task work without a manual archive selection", async () => {
+    h.db.sqlite.prepare("INSERT INTO language_assignment_history VALUES (?,?,?,?,?)").run("change", "task-1", "former@example.test", MAKER, "2026-11-21");
+    const { host, unmount } = await mount(MAKER, "zh", "task-1");
+    try {
+      const list = [...host.querySelectorAll("details")].find(el => el.querySelector("summary")?.textContent?.includes("接手任务的文件"));
+      assert.ok(list);
+      assert.ok(list.querySelector('a[href*="id=eng-1"][href*="download=1"]'));
+      assert.equal(list.querySelector('a[href*="id=eng-2"]'), null);
+    } finally { await unmount(); }
+  });
+
   it("shows nothing to a quality reviewer", async () => {
     const { host, unmount } = await mount(QC, "en", "task-1");
     try { assert.ok(!section(host)); assert.doesNotMatch(host.textContent ?? "", /Internal archive/); }

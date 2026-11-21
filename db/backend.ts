@@ -1,5 +1,6 @@
 import { deseretSceneSubmission } from "./deseret-scene-submission";
 import { batchHandoverCheckpoint, deseretHandoverStatements, plannedHandoverArchive } from "./deseret-production-archive";
+import { nextVideoCode } from "../lib/video-code";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { prepareProjectDateSync } from "./project-date-sync";
@@ -42,6 +43,7 @@ import type { UploadExecution } from "./upload-execution";
 import { copyVerifiedUpload, verifiedUpload } from "../runtime/verified-upload";
 import { signedFileResponse } from "../runtime/file-transfer";
 import { proxyFileResponse } from "../runtime/proxy-file-read";
+import { deseretHandoverFiles } from "./deseret-handover-files";
 import { productionReadableVersionIds, productionReadableVersionQuery } from "./production-file-access";
 import { derivePasswordHash } from "./password-kdf";
 import { verifyLoginMfa, mfaStatus, manageMfa } from "../lib/mfa";
@@ -5583,18 +5585,17 @@ export async function streamProjectFile(
       "final",
       "delivered",
     ].includes(String(file?.status));
-  if (
-    !actor ||
-    !file ||
-    file.deleted_at ||
-    (!libraryAccess &&
-      (!(await canAccessLanguage(actor, String(file.language_project_id))) ||
-        (actor.access === "quality" ? !qualityFileVisible(file) : !salesFinalAccess &&
-          !folderAreaVisible(actor, `/${String(file.directory ?? "")}`))))
-  )
-    throw new PublicError("File is not available.");
-  if (actor.access === "production" && !libraryAccess && !(await productionReadableVersionIds(database(), actor.email, fileId)).has(fileId))
-    throw new PublicError("File is not available.", 404);
+  if (!actor || !file || file.deleted_at) throw new PublicError("File is not available.");
+  if (!libraryAccess) {
+    const inLanguage = await canAccessLanguage(actor, String(file.language_project_id));
+    const inArea = actor.access === "quality" ? qualityFileVisible(file)
+      : salesFinalAccess || folderAreaVisible(actor, `/${String(file.directory ?? "")}`);
+    if (actor.access === "production") {
+      const ordinaryRead = inLanguage && inArea && (await productionReadableVersionIds(database(), actor.email, fileId)).has(fileId);
+      if (!ordinaryRead && !(await deseretHandoverFiles(database(), actor.email, String(file.project_id), { versionId: fileId })).length)
+        throw new PublicError("File is not available.", 404);
+    } else if (!inLanguage || !inArea) throw new PublicError("File is not available.");
+  }
   if (thumbnail) {
     if (!file.thumbnail_object_key && String(file.mime_type).startsWith("image/") && file.object_key)
       return streamStoredObject(
@@ -8973,8 +8974,9 @@ export async function runWorkflowAction(
     if (duplicate)
       throw new PublicError("A video with this name already exists in the project.");
     const videoId = crypto.randomUUID();
-    const sequence = Number(project.video_count || 0) + 1;
-    const videoCode = `VID-${String(sequence).padStart(3, "0")}`;
+    const sequence = Number(project.video_count || 0) + 1; // Display order only; not unique.
+    // Never reuse a code after a video was deleted (unique per project); continues past VID-999.
+    const videoCode = nextVideoCode((await db.prepare("SELECT video_code FROM project_videos WHERE project_id=?").bind(project.id).all<{ video_code: string }>()).results.map(row => String(row.video_code)));
     const videoHierarchy = videoHierarchyStatements(db, {
       clientId: String(project.client_id),
       projectId: String(project.id),

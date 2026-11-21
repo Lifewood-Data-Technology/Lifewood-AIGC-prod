@@ -24,7 +24,7 @@ import { openDailyReport, openProductionWorkspace } from "./ProductionWorkspace"
 
 type Row=Record<string,unknown>;
 type FileRow={id:string;name:string;mimeType:string;size:number;kind:string;category:string;version?:number;document?:boolean;currentVersionId?:string;uploadedBy?:string;uploaderName?:string;createdAt?:string;thumbnailRevision?:string|number|null};
-type Data=FlowData & {deseret?:EditorProductionPhase;task:Row;files:FileRow[];libraryFiles?:FileRow[];documents:FileRow[];checkpoints:Row[];checkpointFiles:Row[];finals:Row[];finalFiles:Row[];handovers:Row[];members:Row[]};
+type Data=FlowData & {deseret?:EditorProductionPhase;task:Row;files:FileRow[];handoverFiles?:FileRow[];libraryFiles?:FileRow[];documents:FileRow[];checkpoints:Row[];checkpointFiles:Row[];finals:Row[];finalFiles:Row[];handovers:Row[];members:Row[]};
 const str=(value:unknown)=>String(value??"");
 const url=(file:FileRow,download=false)=>`${file.document?"/api/request-documents":"/api/files"}?id=${encodeURIComponent(file.id)}${download?"&download=1":""}`;
 
@@ -76,12 +76,14 @@ export default function EditorTaskWorkspace({task,project,email,locale,quality,f
     ? editorUploadLabel(integrationStage, locale, current.status === "待质检")
     : current.status === "待质检" ? t("替换待审成片","Replace pending final") : t("上传成片","Upload final");
   const reports=groupDailyReports(data?.checkpoints||[]),today=reports.find(r=>r.date===reportDay());
-  const all=[...(data?.documents||[]),...(data?.files||[])];
+  const taskFileIds = new Set((data?.files ?? []).map(file => file.id));
+  const inheritedFiles = data?.handoverFiles ?? [];
+  const all=[...(data?.documents||[]),...(data?.files||[]),...inheritedFiles.filter(file => !taskFileIds.has(file.id))];
   const byId=new Map([...all,...(data?.libraryFiles||[])].map(f=>[f.id,f]));
   const reportsById=new Map((data?.checkpoints||[]).map(row=>[str(row.id),row]));
   const report=reportsById.get(reportId);
   const reportGroup=report?reports.find(r=>r.date===reportDetails(report).workDate):null;
-  const inherited=new Set((data?.members||[]).map(m=>str(m.file_version_id)));
+  const inherited=new Set([...inheritedFiles.map(file => file.id), ...(data?.members||[]).map(m=>str(m.file_version_id))]);
   const materialFiles=all.filter(f=>(historical||f.document||!f.currentVersionId||f.currentVersionId===f.id)&&
     (source==="all"||source==="docs"&&f.document||source==="customer"&&/^0[12](\.|$)/.test(f.category)||source==="mine"&&f.uploadedBy===email||source==="handover"&&inherited.has(f.id))&&
     (category==="all"||(category==="audio"?["audio","voice","music"].includes(productionBrowseCategory(f)):productionBrowseCategory(f)===category))&&f.name.toLowerCase().includes(query.toLowerCase()));

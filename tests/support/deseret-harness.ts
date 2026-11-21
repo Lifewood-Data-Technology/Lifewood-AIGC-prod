@@ -46,7 +46,7 @@ const nativeSchema = `
 CREATE TABLE project_files (id TEXT PRIMARY KEY, project_id TEXT, language_project_id TEXT, directory TEXT, original_name TEXT, storage_name TEXT, object_key TEXT,
   mime_type TEXT, size_bytes INTEGER, version INTEGER, uploader_email TEXT, status TEXT, source TEXT DEFAULT 'project', created_at TEXT, deleted_at TEXT);
 CREATE TABLE aigc_folders (id TEXT PRIMARY KEY, parent_folder_id TEXT, language_project_id TEXT, folder_code TEXT, deleted_at TEXT, node_type TEXT, path_cache TEXT);
-CREATE TABLE aigc_files (id TEXT PRIMARY KEY, language_project_id TEXT, folder_id TEXT, status TEXT, deleted_at TEXT, source TEXT NOT NULL DEFAULT 'project');
+CREATE TABLE aigc_files (id TEXT PRIMARY KEY, language_project_id TEXT, folder_id TEXT, status TEXT, deleted_at TEXT, source TEXT NOT NULL DEFAULT 'project', file_kind TEXT DEFAULT 'document', current_version_id TEXT);
 CREATE TABLE aigc_storage_objects (id TEXT PRIMARY KEY, object_key TEXT, etag TEXT, bucket_name TEXT, endpoint_url TEXT, region_name TEXT);
 CREATE TABLE aigc_file_versions (id TEXT PRIMARY KEY, file_id TEXT, version_number INTEGER, original_name TEXT, checksum_sha256 TEXT, size_bytes INTEGER, storage_object_id TEXT, created_at TEXT, created_by TEXT);
 CREATE TABLE production_flow_events (id TEXT PRIMARY KEY, language_project_id TEXT); CREATE TABLE production_flow_files (event_id TEXT, file_version_id TEXT);
@@ -65,6 +65,9 @@ CREATE TABLE deseret_archive_files (id TEXT PRIMARY KEY, archive_id TEXT NOT NUL
   created_at TEXT NOT NULL, UNIQUE (archive_id, file_version_id));
 CREATE TABLE deseret_package_sources (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, package_id TEXT NOT NULL, scene_id TEXT NOT NULL, scene_version INTEGER NOT NULL,
   language_project_id TEXT NOT NULL, video_version_id TEXT NOT NULL, archive_id TEXT NOT NULL, confirmed_by_email TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE (package_id, scene_id));
+CREATE TABLE language_assignment_history (id TEXT, language_project_id TEXT, previous_editor_email TEXT, new_editor_email TEXT, created_at TEXT);
+CREATE TABLE task_material_links (language_project_id TEXT, material_file_id TEXT, material_version_id TEXT);
+CREATE TABLE material_standards (scope_type TEXT, project_id TEXT, language_project_id TEXT, status TEXT, is_current INTEGER, logical_file_id TEXT, file_version_id TEXT);
 CREATE TABLE deseret_task_handovers (id TEXT PRIMARY KEY, handover_id TEXT NOT NULL UNIQUE, project_id TEXT NOT NULL, language_project_id TEXT NOT NULL, handover_kind TEXT NOT NULL,
   from_editor_email TEXT NOT NULL, to_editor_email TEXT NOT NULL, archive_id TEXT, verification TEXT NOT NULL, verification_notes TEXT NOT NULL,
   verified_by_email TEXT, verified_at TEXT, created_at TEXT NOT NULL);

@@ -15,6 +15,8 @@ type Disclosure = {
   temporaryFiles: Listed<{ id: string; name: string; uploader: string; createdAt: string; expiresAt: string }>;
   pendingCleanups: Listed<{ id: string; name: string; uploader: string; state: string; updatedAt: string }>;
   retained: Listed<{ name: string }>;
+  /** Video or language deletion: content shared with other scopes. Originals used elsewhere are never deleted. */
+  shared?: Listed<{ id: string; kind: "link" | "kept"; optional: boolean; name: string; owner: string; ownerName: string }>;
 };
 type Blocker = { type: string; id: string; object: string; owner: string; state: string; startedAt: string; updatedAt: string; action: string; availableAt?: string };
 type Preview = { target: Target; name: string; revision: number; previewHash: string; summary: Summary; disclosure?: Disclosure; available?: boolean; availability?: { enabled: boolean; reason?: string } };
@@ -35,12 +37,22 @@ const messages: Record<string, [string, string]> = {
   UPLOAD_NOT_IN_PROJECT: ["该上传不属于此项目或已不存在，请重新核对。", "This upload is not in this project or no longer exists. Review again."],
   UPLOAD_CANCEL_UNAVAILABLE: ["当前环境无法在此取消上传，请联系管理员。", "Uploads cannot be cancelled here in this environment. Ask an administrator."],
   DIRECT_TRANSFER_DISABLED: ["当前环境无法在此取消上传，请联系管理员。", "Uploads cannot be cancelled here in this environment. Ask an administrator."],
+  INVALID_SHARED_SELECTION: ["共享内容的选择已变化，请重新核对。", "The shared-content selection changed. Review it again."],
   PROJECT_DELETION_UNFINISHED: ["该客户下有项目的永久删除尚未完成。请等待项目负责人完成清理后重新核对。", "A project deletion in this customer is unfinished. Wait for the project owner to finish its cleanup, then review again."],
+};
+/** Video or language deletion: what each block means for that target. Never suggests deleting the whole project. */
+const subitemMessages: Record<string, [string, string]> = {
+  PROJECT_HISTORY_PROTECTED: ["此视频或语言版本（或其所属项目）已交付或已归档，正式历史受保护，不能永久删除。", "This video or language version (or its project) has been delivered or archived. Its history is protected and cannot be permanently deleted."],
+  SHARED_FOLDER_SCOPE: ["此范围的目录与其他视频、语言版本或素材库共享，请先解除该关联后重新核对。", "A folder of this scope is shared with another video, language version or the asset library. Remove that relationship, then review again."],
+  SHARED_FILE_RECORD: ["此范围的文件仍被其他客户或项目使用，请先在使用方解除引用后重新核对。", "A file of this scope is still used by another customer or project. Remove that use where it is, then review again."],
+  SHARED_FILE_UNASSIGNABLE: ["下列文件同时被多个范围、其他项目、素材集合或项目级标准使用，无法移交给单个语言版本。请先在使用方解除对它的引用后重新核对。", "The files below are used by several scopes, another project, an asset collection or a project-level standard, so they cannot be handed over to one language version. Remove those uses, then review again."],
+  SHARED_ITEMS_TOO_MANY: ["共享内容超过 200 项，无法逐项核对。请先在使用方解除部分引用后重新核对。", "More than 200 shared items cannot be reviewed one by one. Remove some of these links where they are used, then review again."],
+  DESERET_SUBITEM_PROTECTED: ["Deseret 对接项目的视频和语言版本需与出版社保持一致，不能在这里单独删除。", "Videos and languages of a Deseret project are kept in step with the publisher and cannot be deleted one by one here."],
 };
 const blockerTypes: Record<string, [string, string]> = {
   upload: ["上传", "Upload"], temporary_upload: ["暂存上传", "Temporary upload"], legacy_upload: ["旧版上传", "Legacy upload"],
   analysis: ["需求分析", "Requirement analysis"], translation: ["名称翻译", "Name translation"], delivered: ["已交付", "Delivered"], archived: ["已归档", "Archived"],
-  shared_folder: ["共享文件夹", "Shared folder"], shared_file: ["共享文件记录", "Shared file record"], project_deletion: ["项目永久删除", "Project deletion"],
+  shared_folder: ["共享文件夹", "Shared folder"], shared_file: ["共享文件记录", "Shared file record"], project_deletion: ["项目永久删除", "Project deletion"], integration: ["Deseret 对接项目", "Deseret project"],
 };
 const blockerStates: Record<string, [string, string]> = {
   created: ["已创建", "Created"], uploading: ["上传中断或进行中", "Uploading or interrupted"], verifying: ["校验中", "Verifying"], cancelled: ["已取消，待清理", "Cancelled, cleanup pending"],
@@ -117,6 +129,8 @@ function DeleteTarget({ target, owner, locale, close, position, total, completed
   const dialog = useRef<HTMLDialogElement>(null), heading = useRef<HTMLHeadingElement>(null), returnFocus = useRef(""), confirmedHere = useRef(""), resumeSent = useRef(""), startInFlight = useRef<Promise<unknown> | null>(null), resumeInFlight = useRef<Promise<unknown> | null>(null), latch = useRef(false), alive = useRef(true), delivered = useRef(false), onDeletedRef = useRef(onDeleted);
   const revoked = useRef(accessRevoked), requestVersion = useRef(0);
   const [preview, setPreview] = useState<Preview | null>(null), [job, setJob] = useState<Job | null>(null), [saved, setSaved] = useState<Saved | null>(null);
+  // Optional shared links ticked for clean-up; unticked ones are kept as history on the original file.
+  const [unlink, setUnlink] = useState<string[]>([]), [sharedFilter, setSharedFilter] = useState<"all" | "link" | "kept">("all");
   const [name, setName] = useState(""), [busy, setBusy] = useState(false), [loading, setLoading] = useState(true), [error, setError] = useState(""), [blocked, setBlocked] = useState(accessRevoked);
   const [blockers, setBlockers] = useState<Blocker[]>([]), [confirming, setConfirming] = useState(""), [notice, setNotice] = useState("");
   const [renderedReviewKey, setRenderedReviewKey] = useState(accessReviewKey);
@@ -173,12 +187,14 @@ function DeleteTarget({ target, owner, locale, close, position, total, completed
   const errorText = useCallback((reason: unknown, submitted = true) => {
     if (reason instanceof DeletionResponseError) {
       if (reason.blockers.length && reason.code !== "PROJECT_HISTORY_PROTECTED") return zh ? "删除被下列事项阻止。逐项处理后请重新核对。" : "Deletion is blocked by the items below. Resolve each one, then review again.";
+      const subitem = target.kind === "video" || target.kind === "language";
+      if (subitem && subitemMessages[reason.code]) return subitemMessages[reason.code][zh ? 0 : 1];
       if (messages[reason.code]) return messages[reason.code][zh ? 0 : 1];
       if (reason.status === 403 || reason.status === 404) return zh ? "记录不存在或访问权限已变化。原操作记录已保留，请核对权限后再继续。" : "Record unavailable or access changed. The original operation receipt is retained. Review access before continuing.";
     }
     if (!submitted) return zh ? "删除影响范围加载失败，尚未提交删除。请关闭后重新核对；若仍失败，请联系管理员检查服务端错误。" : "The deletion impact could not be loaded. No deletion was submitted. Close and review again; if this persists, ask an administrator to check the server error.";
     return zh ? "删除结果待核对，请勿重新发起删除。" : "Deletion is unconfirmed. Do not start another deletion.";
-  }, [zh]);
+  }, [zh, target.kind]);
   const loadPreview = useCallback(async (version = requestVersion.current) => {
     const result = await request(`/api/business-deletion?kind=${target.kind}&id=${encodeURIComponent(target.id)}`);
     if (!isPreview(result, { id: target.id, kind: target.kind })) throw new DeletionResponseError(200, "UNCONFIRMED");
@@ -260,7 +276,8 @@ function DeleteTarget({ target, owner, locale, close, position, total, completed
     const current = () => alive.current && !revoked.current && version === requestVersion.current;
     latch.current = true; setBusy(true); setError(""); setNotice("");
     const priorReceipt = saved;
-    const attempt = priorReceipt || { ...target, submissionId: browserRandomUUID(), revision: preview!.revision, previewHash: preview!.previewHash, confirmationName: name };
+    const attempt = priorReceipt || { ...target, submissionId: browserRandomUUID(), revision: preview!.revision, previewHash: preview!.previewHash, confirmationName: name,
+      ...(target.kind === "video" || target.kind === "language" ? { unlinkShared: [...unlink].sort() } : {}) };
     confirmedHere.current = attempt.submissionId;
     if (!store(attempt)) {
       setError(zh ? "无法保存操作凭据，请恢复浏览器存储后再继续。" : "The operation receipt could not be saved. Restore browser storage before continuing.");
@@ -348,19 +365,33 @@ function DeleteTarget({ target, owner, locale, close, position, total, completed
   const attemptClose = () => { if (!busy && mayLeaveDrafts(locale)) close(); };
   const summary = accessRevoked || finished ? undefined : job?.summary || preview?.summary;
   const disclosure = accessRevoked || finished || job || saved || !isDisclosure(preview?.disclosure) ? undefined : preview?.disclosure;
+  // Section labels and the kept note follow the target: a video or language deletion never reads as a project deletion.
+  const scopeLabel = target.kind === "video" ? (zh ? "此视频" : "this video") : target.kind === "language" ? (zh ? "此语言版本" : "this language version") : (zh ? "项目" : "the project");
+  const keepNote = target.kind === "video" ? (zh ? "只删除此视频及其语言版本的独占内容。所属项目和其他视频保留，不受影响。" : "Only this video and its language versions' exclusive content is deleted. The project and its other videos are kept.")
+    : target.kind === "language" ? (zh ? "只删除此语言版本的独占内容。所属视频、项目和其他语言版本保留，不受影响。" : "Only this language version's exclusive content is deleted. Its video, the project and the other language versions are kept.") : "";
   const more = (list: Listed<unknown>) => list.total > list.items.length ? <li>{zh ? `另有 ${list.total - list.items.length} 项未列出` : `${list.total - list.items.length} more not listed`}</li> : null;
   return <dialog ref={dialog} className="account-access-dialog business-delete-dialog" aria-labelledby="permanent-delete-title" onCancel={event => { event.preventDefault(); attemptClose(); }}><DialogSections>
     <header><h2 id="permanent-delete-title" ref={heading} tabIndex={-1}>{zh ? "永久删除" : "Permanently delete"}{total > 1 ? ` · ${position + 1}/${total}` : ""}</h2><button className="secondary-button" disabled={busy} onClick={attemptClose}>{zh ? "关闭" : "Close"}</button></header>
     <div className="account-access-dialog-body">
       {accessRevoked ? <p role="alert">{zh ? "访问权限已变化，原操作凭据已保留，请核对权限后再继续。" : "Access changed. The original operation receipt is retained. Review access before continuing."}</p> : loading && !finished ? <p role="status">{zh ? "正在核对影响范围…" : "Reviewing impact…"}</p> : <>
         <strong>{finished ? "" : preview?.name || (job ? saved?.confirmationName : "") || ""}</strong>
-        {summary && <><p className="danger-text">{zh ? "确认后将永久清理以下关联记录与独占文件，无法恢复。共享素材及仍被其他对象引用的文件保留。" : "This permanently removes the linked records and exclusive files below. It cannot be undone. Shared material and files referenced elsewhere are retained."}</p><dl className="delete-impact-grid">{([["projects", "项目", "Projects"], ["tasks", "语言任务", "Language tasks"], ["reports", "正式日报", "Daily reports"], ["quality", "质检记录", "Quality records"], ["deliveries", "交付记录", "Deliveries"], ["files", "文件记录", "Files"], ["retainedObjects", "保留的共享存储对象", "Shared objects retained"]] as const).map(([field, cn, en]) => <div key={field}><dt>{zh ? cn : en}</dt><dd>{summary[field]}</dd></div>)}{disclosure && <div><dt>{zh ? "暂存文件（将被永久丢弃）" : "Temporary files (permanently discarded)"}</dt><dd>{disclosure.temporaryFiles.total}</dd></div>}</dl></>}
+        {summary && <><p className="danger-text">{zh ? "确认后将永久清理以下关联记录与独占文件，无法恢复。共享素材及仍被其他对象引用的文件保留。" : "This permanently removes the linked records and exclusive files below. It cannot be undone. Shared material and files referenced elsewhere are retained."}</p>{keepNote && <p className="delete-keep-note" role="note"><strong>{keepNote}</strong></p>}<dl className="delete-impact-grid">{([["projects", "项目", "Projects"], ["tasks", "语言任务", "Language tasks"], ["reports", "正式日报", "Daily reports"], ["quality", "质检记录", "Quality records"], ["deliveries", "交付记录", "Deliveries"], ["files", "文件记录", "Files"], ["retainedObjects", "保留的共享存储对象", "Shared objects retained"]] as const).map(([field, cn, en]) => <div key={field}><dt>{zh ? cn : en}</dt><dd>{summary[field]}</dd></div>)}{disclosure && <div><dt>{zh ? "暂存文件（将被永久丢弃）" : "Temporary files (permanently discarded)"}</dt><dd>{disclosure.temporaryFiles.total}</dd></div>}</dl></>}
         {disclosure && <div className="delete-disclosure">
-          <details><summary>{zh ? `正式文件与版本（${disclosure.files.total}）· 随项目删除` : `Official files and versions (${disclosure.files.total}) · deleted with the project`}</summary><ul>{disclosure.files.items.map(file => <li key={file.id}><span>{file.name || file.id} · v{file.version}</span><small>{[file.uploader, when(file.createdAt), ...file.references.map(reference => referenceText(reference, zh))].filter(Boolean).join(" · ")}</small></li>)}{more(disclosure.files)}</ul></details>
+          <details><summary>{zh ? `正式文件与版本（${disclosure.files.total}）· 随${scopeLabel}删除` : `Official files and versions (${disclosure.files.total}) · deleted with ${scopeLabel}`}</summary><ul>{disclosure.files.items.map(file => <li key={file.id}><span>{file.name || file.id} · v{file.version}</span><small>{[file.uploader, when(file.createdAt), ...file.references.map(reference => referenceText(reference, zh))].filter(Boolean).join(" · ")}</small></li>)}{more(disclosure.files)}</ul></details>
           <details open={disclosure.temporaryFiles.total > 0}><summary>{zh ? `暂存文件（${disclosure.temporaryFiles.total}）· 将被永久丢弃` : `Temporary files (${disclosure.temporaryFiles.total}) · will be permanently discarded`}</summary><ul>{disclosure.temporaryFiles.items.map(file => <li key={file.id}><span>{file.name || file.id}</span><small>{[file.uploader, zh ? `上传于 ${when(file.createdAt)}` : `uploaded ${when(file.createdAt)}`, zh ? `原定 ${when(file.expiresAt)} 到期` : `expires ${when(file.expiresAt)}`].join(" · ")}</small></li>)}{more(disclosure.temporaryFiles)}</ul></details>
-          <details><summary>{zh ? `待清理（${disclosure.pendingCleanups.total}）· 随项目一并清除` : `Pending cleanups (${disclosure.pendingCleanups.total}) · removed with the project`}</summary><ul>{disclosure.pendingCleanups.items.map(item => <li key={item.id}><span>{item.name || item.id}</span><small>{[item.uploader, blockerStates[item.state]?.[zh ? 0 : 1] ?? item.state, when(item.updatedAt)].filter(Boolean).join(" · ")}</small></li>)}{more(disclosure.pendingCleanups)}</ul></details>
+          <details><summary>{zh ? `待清理（${disclosure.pendingCleanups.total}）· 随${scopeLabel}一并清除` : `Pending cleanups (${disclosure.pendingCleanups.total}) · removed with ${scopeLabel}`}</summary><ul>{disclosure.pendingCleanups.items.map(item => <li key={item.id}><span>{item.name || item.id}</span><small>{[item.uploader, blockerStates[item.state]?.[zh ? 0 : 1] ?? item.state, when(item.updatedAt)].filter(Boolean).join(" · ")}</small></li>)}{more(disclosure.pendingCleanups)}</ul></details>
           <details><summary>{zh ? `保留的共享存储对象（${disclosure.retained.total}）· 不删除` : `Shared storage objects retained (${disclosure.retained.total}) · not deleted`}</summary><ul>{disclosure.retained.items.map((item, index) => <li key={index}><span>{item.name || (zh ? "未命名对象" : "Unnamed object")}</span></li>)}{more(disclosure.retained)}</ul></details>
         </div>}
+        {disclosure?.shared && disclosure.shared.total > 0 && !finished && <details open className="delete-disclosure delete-shared" data-section="shared">
+          <summary>{zh ? `共享内容（${disclosure.shared.total}）· 原件不删除` : `Shared content (${disclosure.shared.total}) · originals are not deleted`}</summary>
+          <label>{zh ? "筛选" : "Filter"}<select value={sharedFilter} disabled={busy || Boolean(saved)} onChange={event => setSharedFilter(event.target.value as "all" | "link" | "kept")}>
+            <option value="all">{zh ? "全部" : "All"}</option><option value="link">{zh ? "可选：本对象对其他原件的关联" : "Optional: links to originals owned elsewhere"}</option><option value="kept">{zh ? "必要：移交给其他语言的文件" : "Required: files handed over to another language"}</option>
+          </select></label>
+          <ul>{disclosure.shared.items.filter(item => sharedFilter === "all" || item.kind === sharedFilter).map(item => <li key={item.id} data-shared={item.kind}>
+            {item.optional ? <label><input type="checkbox" disabled={busy || Boolean(saved)} checked={unlink.includes(item.id)} onChange={event => setUnlink(event.target.checked ? [...unlink, item.id] : unlink.filter(id => id !== item.id))} />{item.name}{item.ownerName ? ` · ${item.ownerName}` : ""}</label> : <span>{item.name}</span>}
+            <small>{item.optional ? (unlink.includes(item.id) ? (zh ? "清理本对象的这条关联；原件及其他引用保留" : "Clean up this link; the original and other references stay") : (zh ? "不清理：作为原件的历史记录保留，可追溯" : "Not cleaned: kept as a traceable history entry on the original")) : (zh ? `仍被${item.ownerName}使用：保留原件并移交给${item.ownerName}（必要，不可选）` : `Still used by ${item.ownerName}: the original is kept and handed over to ${item.ownerName} (required)`)}</small>
+          </li>)}{more(disclosure.shared)}</ul>
+        </details>}
         {finished ? <p role="status">{zh ? "永久清理已完成。" : "Permanent cleanup completed."}</p> : saved ? <p role="status">{zh ? `清理进度：${job?.completedObjects ?? 0} / ${job?.totalObjects ?? "—"}` : `Cleanup: ${job?.completedObjects ?? 0} / ${job?.totalObjects ?? "—"}`}</p> : preview && !deletionAvailable(preview) ? <p role="status">{zh ? "永久删除暂未开放。" : "Permanent deletion is not available yet."}</p> : preview ? <label>{zh ? "输入名称确认" : "Enter the name to confirm"}<input autoComplete="off" value={name} onChange={event => setName(event.target.value)} disabled={busy} placeholder={preview.name} /></label> : null}
       </>}{error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
       {blockers.length > 0 && !accessRevoked && <section className="delete-blockers" aria-label={zh ? "阻止删除的事项" : "Items blocking deletion"}>

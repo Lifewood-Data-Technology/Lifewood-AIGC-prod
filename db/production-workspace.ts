@@ -1,3 +1,4 @@
+import { deseretHandoverFiles } from "./deseret-handover-files";
 import { prepareAuditStatement } from "./audit-write";
 import { previousProductionRender, lastProductionFinal } from "./deseret-render-history";
 import { deseretSceneSubmission } from "./deseret-scene-submission";
@@ -232,7 +233,9 @@ export async function productionWorkspaceData(email: string, taskId: string) {
   const publishedFinalVersionIds = state?.packages.filter(pack => pack.phase === "final")
     .flatMap(pack => pack.files.filter(file => file.languageTaskId === taskId).map(file => file.fileVersionId)) ?? [];
   const deseret = state && link ? { revision: Number(link.revision), publishedFinalVersionIds, stage: state.stage, intake: state.intake, materials: state.materials, scenes: state.scenes.filter(scene => scene.languageTaskId === taskId) } : undefined;
-  return { deseret, pendingFinalVersionId, task: ctx.task, flowEvents, flowFiles:visibleMembers(flowFiles), files: visible, libraryFiles, documents: documents.map(d=>({...d,kind:"document",document:true})), handovers, members:visibleMembers(members), finals, finalFiles:visibleMembers(finalFiles), staged, checkpoints, checkpointFiles:visibleMembers(checkpointFiles) };
+  const handoverFiles = link && ctx.actor.access === "production"
+    ? await deseretHandoverFiles(ctx.db, email, String(ctx.task.project_id), { taskId }) : [];
+  return { deseret, handoverFiles, pendingFinalVersionId, task: ctx.task, flowEvents, flowFiles:visibleMembers(flowFiles), files: visible, libraryFiles, documents: documents.map(d=>({...d,kind:"document",document:true})), handovers, members:visibleMembers(members), finals, finalFiles:visibleMembers(finalFiles), staged, checkpoints, checkpointFiles:visibleMembers(checkpointFiles) };
 }
 
 export async function submitProductionWorkspace(email: string, payload: Record<string,string>) {

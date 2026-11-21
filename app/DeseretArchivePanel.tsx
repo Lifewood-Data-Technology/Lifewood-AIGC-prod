@@ -68,10 +68,15 @@ export default function DeseretArchivePanel({ data, taskId, locale, busy, comman
         </article>
       ))}
       {tasks.map(task => {
+        const workFiles = (data.handoverFiles ?? []).filter(file => file.taskId === task.id);
         const archives = (data.archives ?? []).filter(archive => archive.taskId === task.id);
         return (
           <div key={task.id}>
             <h5>{task.language}</h5>
+            {workFiles.length > 0 && <details>
+              <summary>{t("接手任务的文件和共享素材", "Task files and shared materials")}</summary>
+              <ul>{workFiles.map(file => <li key={file.id}>{fileLinks(file)}</li>)}</ul>
+            </details>}
             {!archives.length && <p>{t("暂无留档。", "No archive yet.")}</p>}
             {archives.map(archive => (
               <article key={archive.id} id={`${panelId}-${archive.id}`} data-archive-number={archive.number} data-archive-valid={archive.valid}>
