@@ -2,7 +2,7 @@ import { prepareAuditStatement } from "./audit-write";
 import { previousProductionRender, lastProductionFinal } from "./deseret-render-history";
 import { deseretSceneSubmission } from "./deseret-scene-submission";
 import { submissionNoteRequired } from "../lib/deseret-editor-stage";
-import { archiveStatements, engineeringFolderGuard, nativeArchiveFiles } from "./deseret-production-archive";
+import { archiveStatements, engineeringFolderGuard, nativeArchiveFiles, savedArchiveVersionsGuard } from "./deseret-production-archive";
 import { deseretArchiveClosedStatuses } from "./backend";
 import type { DeseretIntegrationState } from "../lib/deseret-workspace";
 import { uploadTypeError, categoryUploadPurpose, uploadSizeError } from "../lib/upload-policy";
@@ -352,10 +352,9 @@ export async function submitProductionWorkspace(email: string, payload: Record<s
   }
   if(replacing && (!priorFinal || priorFinal.id !== oldFinal?.file_id || priorFinal.current_version_id !== oldFinal?.current_version_id))
     throw new PublicError("Choose a new video to replace the pending final.",409,"FINAL_REPLACEMENT_CHANGED");
-  for(const file of [...existing,...staged]){
-    // An archive never reclassifies a saved version: its real folder decides its category.
-    const savedArchiveFile=archive&&!staged.some(row=>String(row.id)===String(file.id));
-    const fileId=String(file.id), category=final&&fileId===finalId?"final":!savedArchiveFile&&categories[fileId]||productionFileCategories.find(c=>c.code===file.category)?.id||String(file.category);
+  // Saved archive versions keep their existing folders. Only newly filed versions need an upload category.
+  for(const file of archive ? staged : [...existing,...staged]){
+    const fileId=String(file.id), category=final&&fileId===finalId?"final":categories[fileId]||productionFileCategories.find(c=>c.code===file.category)?.id||String(file.category);
     if(category==="final"&&(!final||fileId!==finalId))throw new PublicError("Only one file can be the final video.");
     if(category!=="final"&&!validProductionCategory(category))throw new PublicError("Choose a category for every production file.");
     selectedCategories.set(fileId,category);
@@ -461,10 +460,9 @@ export async function submitProductionWorkspace(email: string, payload: Record<s
   const guard=taskGuard(ctx,true,replacing,archive);
   if(archivedSavedEngineering){const folder=engineeringFolderGuard(archivedSavedEngineering,taskId);guard.sql+=` AND ${folder.sql}`;guard.values.push(...folder.values);}
   if(archive&&existing.length){
-    // Saved versions in an archive must still be readable by this editor when the archive is written.
-    const readable=productionReadableVersionQuery(email);
-    guard.sql+=` AND NOT EXISTS(SELECT 1 FROM json_each(?) chosen WHERE chosen.value NOT IN (${readable.sql}))`;
-    guard.values.push(JSON.stringify(existing.map(row=>String(row.id))),...readable.values);
+    const saved = savedArchiveVersionsGuard(existing.map(row => String(row.id)), taskId, String(task.project_id));
+    guard.sql += ` AND ${saved.sql}`;
+    guard.values.push(...saved.values);
   }
   if(sceneSubmission){
     guard.sql+=` AND ${sceneSubmission.sql}`;

@@ -19,6 +19,7 @@
 - 登记入口有两个：
   - Deseret 制作面板的“内部留档”：选择本任务已保存的文件；
   - 原生工作区的“上传工程并留档”：沿用既有的暂存和正式确认上传，在同一事务中保存文件并登记留档。分镜或成片送审窗口中有快捷入口。
+- 原生留档表单可混选新暂存的文件与本任务已有权限读取的正式版本。关闭并重开草稿后，可以继续使用原先选择的工程和预览版本。
 - 谁可以登记：
   - 剪辑师可为自己的任务登记，只能选择按 `productionReadableVersionQuery` 自己本来就能读取的版本。登记本身不会带来新的读取权限，因此前任未进入日报、送审或留档的私有草稿不会出现，也不能被登记。
   - 项目负责人可为本项目的任何任务登记，沿用项目权限。
@@ -48,6 +49,7 @@
   - 缺少留档，或留档失效：错误提示会列出具体的语言任务；
   - 任务有待确认的交接；
   - 接手人已登记“缺项”，而所选留档早于该交接。
+- 再次改派后，之前报告的缺项仍然有效。发布事务会核对该任务历次缺项交接的时间，拒绝早于其中任意一次的留档。
 - 负责人可以在发布处直接为缺项任务登记留档。
 - 发布时逐镜头写入绑定，与发布在同一事务中原子提交，事务内会复核留档文件仍然有效，且工程文件仍在 `03.project`。版本固定，之后再登记的留档不会改写旧包。历史包不补造绑定。
 
@@ -66,6 +68,8 @@
 - **应急缺件**：接手人可以继续在内部补做、送质检；在补登更新的留档之前，不能对外发布。
 - 纯质检员调动、首次分配和普通项目都保持原状。
 
+接手人可以从交接记录打开固定的留档，按文件版本下载工程、预览或素材。支持在线预览的格式另有预览入口。文件失效时显示缺失，存储直连不可用时会停止传输。
+
 ### 权限
 
 - 任务的现任剪辑师可以读取本任务所有留档引用的版本，因此链式换人（甲→乙→丙）后，丙能拿到甲和乙的留档。
@@ -76,6 +80,7 @@
 
 - 未完成上传列表接受 `archive` 用途，按该用途授权，并且只列出该用途的上传。其他用途的白名单不变。
 - 留档表单按 `archive` 用途列出未完成上传；全局列表的“返回原表单”会打开留档表单。
+- 留档正式提交后如未收到响应，从同任务的日报或成片入口也会找回原请求，按原提交编号核对。
 - 旧式上传的状态核对，按暂存文件本身的用途取权。
 
 ### 删除保护
@@ -193,6 +198,8 @@ This document is the current description. The design and plan are historical rec
 - Saved versions are judged by their real folder. Both registration paths re-check the engineering version's folder, liveness and readability inside the write transaction.
 - Registration stays open through internal QC and publisher review.
 
+The native archive form accepts a mix of new uploads and authorized saved versions. Drafts retain the engineering and preview selections. Opening another form for the same task recovers an unconfirmed submission under its original request ID.
+
 **Publishing.**
 - Publishing a storyboard or final round requires the lead's explicit archive confirmation for every scene (video). Nothing is applied automatically; "apply to all scenes of this task" is an explicit action.
 - A confirmation holds only for the current round, scene version and video. A new round asks again even for an identical video.
@@ -205,6 +212,8 @@ This document is the current description. The design and plan are historical rec
 - Every editor handover records a separate verification by the incoming editor.
 - After an emergency handover with missing work, the editor can continue internally, but publication waits for a newer archive.
 - Reviewer-only changes and ordinary projects are unchanged.
+
+A later reassignment preserves the cutoff from earlier handovers marked missing. The incoming editor can open the pinned archive and access its exact versions through authorized direct downloads or supported previews.
 
 **Isolation.** Archives, pinned sources and verifications live only in four AIGC tables (migration 0010). They never reach publisher events, transfer tasks, integration state or resends.
 

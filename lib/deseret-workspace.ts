@@ -195,4 +195,10 @@ export type DeseretTaskHandover = {
   id: string; taskId: string; kind: "planned" | "emergency" | "batch"; from: string; to: string; archiveId?: string;
   verification: "pending" | "verified" | "missing"; notes: string; verifiedAt?: string; createdAt: string;
 };
+/** A subsequent staffing change does not clear a missing-work report on the same task. */
+export function publishableArchive(archive: DeseretArchive, handovers: DeseretTaskHandover[]) {
+  return archive.valid && !handovers.some(handover => handover.taskId === archive.taskId &&
+    handover.verification === "missing" && archive.createdAt < handover.createdAt);
+}
+
 export type DeseretPackageSource = { packageId: string; sceneId: string; sceneVersion: number; taskId: string; videoVersionId: string; archiveId: string; archiveNumber: number };

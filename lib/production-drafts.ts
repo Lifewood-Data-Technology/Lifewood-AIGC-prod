@@ -21,7 +21,7 @@ export function loadProductionDraft(storage:Storage,email:string,taskId:string,m
     storage.removeItem(reportKey);
   }
   const modes=[mode,...["daily","final","materials"].filter(item=>item!==mode)];
-  const keys=[productionDraftKey(email,taskId,mode,flowStage),...modes.map(item=>productionDraftKey(email,taskId,item)),...productionFlowStages.map(stage=>productionDraftKey(email,taskId,"materials",stage.id))];
+  const keys=[productionDraftKey(email,taskId,mode,flowStage),...modes.map(item=>productionDraftKey(email,taskId,item)),productionDraftKey(email,taskId,"materials","archive"),...productionFlowStages.map(stage=>productionDraftKey(email,taskId,"materials",stage.id))];
   const drafts=[...new Set(keys)].map(key=>read(storage,key));
   // An uncertain POST is reconciled using its exact original payload, even when
   // another entry was clicked. Never create a new submission to bypass it.

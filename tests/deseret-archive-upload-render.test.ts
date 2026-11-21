@@ -48,7 +48,7 @@ function serve(status: string) {
     if (url.pathname === "/api/production-workspace" && url.searchParams.get("task") === TASK) return Response.json({
       deseret: { stage: "production", intake: "accepted", materials: "ready", revision: 3, publishedFinalVersionIds: [], scenes: [] },
       task: { id: TASK, status, revision: 5, production_progress: 40, reviewer_email: QC, editor_email: MAKER, project_name: "Book trailer", language: "English" },
-      files: [engineering, preview], libraryFiles: [], documents: [], staged: [], handovers: [], members: [], finals: [], finalFiles: [], checkpoints: [], checkpointFiles: [] });
+      files: [engineering, preview], libraryFiles: [{ ...engineering, library: true, id: "library", name: "library.prproj" }], documents: [], staged: [{ ...preview, id: "staged-1", name: "new-preview.mp4", currentVersionId: undefined, staged: true, category: "video", purpose: "archive" }], handovers: [], members: [], finals: [], finalFiles: [], checkpoints: [], checkpointFiles: [] });
     return Response.json({ error: "not used" }, { status: 404 });
   }) as typeof fetch;
 }
@@ -123,6 +123,89 @@ describe("native archive upload", () => {
         ["archive", "eng-1", "prev-1", "Continue from scene 9", JSON.stringify(["eng-1", "prev-1"])]);
       assert.match(host.textContent ?? "", /内部留档/);
     } finally { await unmount(); }
+  });
+
+  it("recovers an unresolved archive from a daily form and replays its original request", async () => {
+    serve("待质检");
+    const pending = { submissionId: "receipt-1", kind: "archive", languageProjectId: TASK,
+      archiveProjectVersionId: "eng-1", archivePreviewVersionId: "prev-1", fileIds: '["eng-1","prev-1"]' };
+    window.localStorage.setItem(productionDraftKey(MAKER, TASK, "materials", "archive"), JSON.stringify({
+      at: Date.now(), note: "", selected: ["eng-1", "prev-1"], categories: { "eng-1": "project", "prev-1": "video" },
+      context: { mode: "materials" }, pending }));
+    const { host, unmount } = await mount();
+    try {
+      await act(async () => { open(TASK, "daily"); });
+      await settle();
+      assert.ok(host.querySelector("[data-section='archive-upload']"), "unresolved archive takes priority");
+      assert.match(primary(host).textContent ?? "", /核对本次提交结果/);
+      await act(async () => { primary(host).click(); });
+      await settle();
+      assert.deepEqual(posts, [pending]);
+    } finally { await unmount(); }
+  });
+
+  it("retains the submission id when a POST response is lost and the editor reopens a different form", async () => {
+    serve("待质检");
+    const server = globalThis.fetch;
+    globalThis.fetch = async (input, init) => {
+      const response = await server(input, init);
+      if (init?.method === "POST" && posts.length === 1) throw new TypeError("Lost response");
+      return response;
+    };
+    window.localStorage.setItem(productionDraftKey(MAKER, TASK, "materials", "archive"), JSON.stringify({
+      at: Date.now(), note: "", selected: ["eng-1"], categories: { "eng-1": "project" },
+      context: { mode: "materials" }, percent: "40" }));
+    let view = await mount();
+    try {
+      await act(async () => { open(TASK, "materials", undefined, undefined, undefined, { archive: true }); });
+      await settle();
+      await setValue(view.host.querySelector("[data-section='archive-upload'] select")!, "eng-1");
+      await act(async () => { primary(view.host).click(); });
+      await settle();
+      assert.equal(posts.length, 1);
+      await view.unmount();
+      view = await mount();
+      await act(async () => { open(TASK, "final"); });
+      await settle();
+      assert.match(primary(view.host).textContent ?? "", /核对本次提交结果/);
+      await act(async () => { primary(view.host).click(); });
+      await settle();
+      assert.deepEqual(posts[1], posts[0]);
+    } finally { await view.unmount(); }
+  });
+
+  it("mixes saved task files and staged files and restores the unsubmitted role choices", async () => {
+    serve("待质检");
+    let view = await mount();
+    const openArchive = async () => {
+      await act(async () => { open(TASK, "materials", undefined, undefined, undefined, { archive: true }); });
+      await settle();
+    };
+    try {
+      await openArchive();
+      const choose = [...view.host.querySelectorAll("button")].find(b => /选择已.*文件/.test(b.textContent ?? ""))!;
+      await act(async () => { choose.click(); });
+      await settle();
+      const cards = [...view.host.querySelectorAll(".production-file-grid article")];
+      for (const name of [engineering.name, "new-preview.mp4"]) {
+        const card = cards.find(c => c.textContent?.includes(name));
+        assert.ok(card, `picker offers ${name}`);
+        const pick = card.querySelector("button[aria-pressed]") as HTMLButtonElement;
+        await act(async () => { pick.click(); });
+      }
+      assert.ok(cards.every(c => !c.textContent?.includes("library.prproj")));
+      await act(async () => { primary(view.host).click(); });
+      const selects = () => [...view.host.querySelectorAll<HTMLSelectElement>("[data-section='archive-upload'] select")];
+      await setValue(selects()[0], "eng-1");
+      await setValue(selects()[1], "staged-1");
+      await view.unmount();
+      view = await mount();
+      await openArchive();
+      assert.deepEqual(selects().map(select => select.value), ["eng-1", "staged-1"]);
+      await act(async () => { primary(view.host).click(); });
+      await settle();
+      assert.deepEqual([posts[0]?.archiveProjectVersionId, posts[0]?.archivePreviewVersionId], ["eng-1", "staged-1"]);
+    } finally { await view.unmount(); }
   });
 
   it("offers as engineering file only a saved version that really is in Project files, whatever the form category", async () => {

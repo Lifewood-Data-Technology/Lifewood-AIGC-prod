@@ -39,6 +39,8 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
+    if (url.searchParams.get("directOnly") === "1" && process.env.FILE_TRANSFER_MODE !== "direct")
+      return Response.json({ error: "Direct file access is unavailable." }, { status: 503 });
     return await fileTransferRead(request, () => streamProjectFile(authenticatedEmail(request), url.searchParams.get("id") ?? "", url.searchParams.get("download") === "1", request.headers.get("range"), url.searchParams.get("thumbnail") === "1"));
   } catch (error) {
     return apiError(error, "File unavailable.", 404);

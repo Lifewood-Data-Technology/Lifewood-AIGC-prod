@@ -117,6 +117,27 @@ describe("internal archive section", () => {
     } finally { await unmount(); }
   });
 
+  it("opens the exact live versions of the incoming editor's pinned archive", async () => {
+    h.db.sqlite.prepare("UPDATE aigc_file_versions SET created_by='former@example.test' WHERE id IN ('eng-1','voice-1')").run();
+    const archive = await h.service.command(LEAD, PROJECT, { requestId: "register-pinned", action: "archive.register", payload: { taskId: "task-1",
+      projectVersionId: "eng-1", previewVersionId: "video-a", materialVersionIds: ["voice-1"] }, expectedRevision: h.state().revision });
+    const pinned = archive.archives!.find(item => item.taskId === "task-1")!;
+    for (const statement of (await deseretHandoverStatements(h.db, { handoverId: "pinned", projectId: PROJECT, taskId: "task-1",
+      kind: "emergency", fromEmail: "former@example.test", toEmail: MAKER, now: "2026-11-20", archiveId: pinned.id })).statements) await statement.run();
+    h.db.sqlite.prepare("UPDATE project_files SET deleted_at='2026-11-21' WHERE id='voice-1'").run();
+    const { host, unmount } = await mount(MAKER, "en", "task-1");
+    try {
+      const target = host.querySelector("[data-handover='pinned'] a")?.getAttribute("href");
+      assert.ok(target && target.startsWith("#"), "handover links to its exact archive");
+      const card = window.document.getElementById(decodeURIComponent(target.slice(1)))!;
+      assert.equal(card.getAttribute("data-archive-number"), String(pinned.number));
+      const links = [...card.querySelectorAll("a[href]")].map(a => new URL(a.getAttribute("href")!, window.location.href));
+      assert.deepEqual(links.filter(url => url.searchParams.get("download") === "1").map(url => url.searchParams.get("id")).sort(), ["eng-1", "video-a"]);
+      assert.ok(links.some(url => url.searchParams.get("id") === "video-a" && !url.searchParams.has("download")));
+      assert.ok(links.every(url => url.pathname === "/api/files" && url.searchParams.get("directOnly") === "1"));
+    } finally { await unmount(); }
+  });
+
   it("shows nothing to a quality reviewer", async () => {
     const { host, unmount } = await mount(QC, "en", "task-1");
     try { assert.ok(!section(host)); assert.doesNotMatch(host.textContent ?? "", /Internal archive/); }

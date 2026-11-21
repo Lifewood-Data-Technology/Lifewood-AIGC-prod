@@ -35,6 +35,22 @@ describe("unfinished archive uploads", () => {
     await assert.rejects(() => uploads.list(MAKER, "task-1", "anything-else", ""), /Invalid upload selection/);
   });
 
+  it("requires direct transfer for archive file links before any file read", async () => {
+    const original = process.env.FILE_TRANSFER_MODE;
+    process.env.FILE_TRANSFER_MODE = "proxy";
+    try {
+      const { GET } = await import("../app/api/files/route");
+      for (const suffix of ["", "&download=1", "&access=1"]) {
+        const response = await GET(new Request(`https://aigc.example.test/api/files?id=eng-1&directOnly=1${suffix}`));
+        assert.equal(response.status, 503);
+        assert.equal(response.headers.get("location"), null);
+      }
+    } finally {
+      if (original === undefined) delete process.env.FILE_TRANSFER_MODE;
+      else process.env.FILE_TRANSFER_MODE = original;
+    }
+  });
+
   it("returns an archive upload to the archive form; other purposes to their own form", () => {
     assert.deepEqual(productionRecoveryTarget({ task: "task-1", purpose: "archive", id: "u1" }), { taskId: "task-1", mode: "materials", archive: true, recoveredFileId: "u1" });
     assert.deepEqual(productionRecoveryTarget({ task: "task-1", purpose: "final", id: "u2" }), { taskId: "task-1", mode: "final", recoveredFileId: "u2" });

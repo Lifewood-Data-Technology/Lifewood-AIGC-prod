@@ -4,7 +4,7 @@
 // editor (after any number of handovers) can read every archived version. Nothing here is ever sent to Deseret.
 import { beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { archiveSelection, archiveStatements, batchHandoverCheckpoint, deseretHandoverStatements, engineeringFolderGuard, nativeArchiveFiles, plannedHandoverArchive, taskArchives } from "../db/deseret-production-archive";
+import { archiveSelection, archiveStatements, batchHandoverCheckpoint, deseretHandoverStatements, engineeringFolderGuard, nativeArchiveFiles, packageSourceSelection, plannedHandoverArchive, savedArchiveVersionsGuard, taskArchives } from "../db/deseret-production-archive";
 import { productionReadableVersionQuery } from "../db/production-file-access";
 import { PublicError } from "../lib/security-controls";
 import { sqliteDatabase } from "./support/sqlite-database";
@@ -43,6 +43,16 @@ describe("archive registration", () => {
     version(h, "preview-1", "task-1", "03.preview", "video/mp4");
     version(h, "voice-1", "task-1", "03.voice", "audio/mpeg");
     version(h, "eng-t2", "task-2", "03.project");
+  });
+
+  it("keeps every saved native archive version inside its original task and project through commit", () => {
+    const guard = savedArchiveVersionsGuard(["eng-v1", "preview-1"], "task-1", PROJECT);
+    const holds = () => (h.db.sqlite.prepare(`SELECT ${guard.sql} AS ok`).get(...guard.values) as { ok: number }).ok;
+    assert.equal(holds(), 1);
+    h.db.sqlite.prepare("UPDATE project_files SET language_project_id='task-2' WHERE id='preview-1'").run();
+    assert.equal(holds(), 0);
+    h.db.sqlite.prepare("UPDATE project_files SET language_project_id='task-1',project_id='another-project' WHERE id='preview-1'").run();
+    assert.equal(holds(), 0);
   });
 
   it("records the engineering version, optional preview, materials and next steps, numbered per task", async () => {
@@ -374,6 +384,20 @@ describe("Deseret editor handovers", () => {
     await rejectsCode(() => command(MAKER, "handover.verify", { handoverId: reassigned, result: "verified" }), "FORBIDDEN");
   });
 
+  it("rechecks newly reported missing work on the selected archive's task at commit", async () => {
+    await command(MAKER, "archive.register", { taskId: "task-1", projectVersionId: `eng-${SECRET}-1` });
+    const archiveId = archiveOf("task-1")!.id;
+    h.db.sqlite.prepare("UPDATE deseret_production_archives SET created_at='2026-11-19' WHERE id=?").run(archiveId);
+    const scenes = h.state().scenes.filter(scene => scene.languageTaskId === "task-1");
+    const { guard } = await packageSourceSelection(h.db, { projectId: PROJECT, packageId: "race", scenes,
+      sources: confirmed({ "scene-a": archiveId }), email: LEAD, now: "2026-11-21" });
+    const holds = () => (h.db.sqlite.prepare(`SELECT ${guard.sql} AS ok`).get(...guard.values) as { ok: number }).ok;
+    const id = await handOver("emergency");
+    assert.equal(holds(), 1);
+    await command(MAKER, "handover.verify", { handoverId: id, result: "missing", notes: "Missing engineering files" });
+    assert.equal(holds(), 0);
+  });
+
   it("after missing work is reported, publishes only with an archive registered after that handover", async () => {
     await command(MAKER, "archive.register", { taskId: "task-1", projectVersionId: `eng-${SECRET}-1` });
     const before = archiveOf("task-1")!.id;
@@ -382,6 +406,8 @@ describe("Deseret editor handovers", () => {
     await command(MAKER, "handover.verify", { handoverId: id, result: "missing", notes: "Engineering file will not open." });
     await command(LEAD, "archive.register", { taskId: "task-2", projectVersionId: `eng-${SECRET}-2` });
     const publish = (archive: string) => command(LEAD, "package.publish", { phase: "storyboard", sources: confirmed({ "scene-a": archive, "scene-b": archiveOf("task-2")!.id }) });
+    // A later staffing change must not clear the first editor's missing-work report.
+    await handOver("batch", "2026-11-21T01:00:00.000Z", "later");
     await rejectsCode(() => publish(before), "DESERET_ARCHIVE_REQUIRED", /task-1/);
     version(h, "eng-rebuilt", "task-1", "03.project");
     await command(MAKER, "archive.register", { taskId: "task-1", projectVersionId: "eng-rebuilt", nextSteps: "Rebuilt; continue from scene 6." });

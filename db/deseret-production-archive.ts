@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import type { Database, DatabaseStatement } from "./database";
 import { liveLogicalFileSql } from "./file-integrity";
 import { PublicError } from "../lib/security-controls";
+import { publishableArchive } from "../lib/deseret-workspace";
 import type { DeseretArchive, DeseretArchiveCandidate, DeseretArchiveFile, DeseretPackageSource, DeseretScene, DeseretTaskHandover } from "../lib/deseret-workspace";
 
 type Row = Record<string, unknown>;
@@ -39,6 +40,12 @@ export function engineeringFolderGuard(versionId: string, taskId: string) {
     WHERE v.id=? AND f.language_project_id=? AND folder.folder_code='${ENGINEERING_FOLDER}' AND folder.deleted_at IS NULL)`, values: [versionId, taskId] as (string | number | null)[] };
 }
 
+/** Saved versions must remain live in both the selected language task and its project at commit. */
+export function savedArchiveVersionsGuard(ids: string[], taskId: string, projectId: string) {
+  return { sql: `NOT EXISTS(SELECT 1 FROM json_each(?) chosen WHERE NOT EXISTS(${liveVersionSql("v.id=chosen.value", "?", "?")}))`,
+    values: [JSON.stringify(ids), taskId, taskId, projectId, projectId] };
+}
+
 export type ArchiveInput = { projectVersionId: string; previewVersionId?: string; materialVersionIds?: string[]; nextSteps?: string };
 
 /**
@@ -65,8 +72,9 @@ export async function archiveSelection(db: Database, projectId: string, taskId: 
   const { id, statements } = archiveStatements(db, { projectId, taskId, email, now, nextSteps: input.nextSteps, files: ids.map(fileId => ({ id: fileId, role: roles.get(fileId)! })) });
   const readableGuard = readable ? ` AND NOT EXISTS(SELECT 1 FROM json_each(?) chosen WHERE chosen.value NOT IN (${readable.sql}))` : "";
   const folder = engineeringFolderGuard(input.projectVersionId, taskId);
-  return { id, statements, guard: { sql: `NOT EXISTS(SELECT 1 FROM json_each(?) chosen WHERE NOT EXISTS(${liveVersionSql("v.id=chosen.value", "?", "?")}))${readableGuard} AND ${folder.sql}`,
-    values: [JSON.stringify(ids), taskId, taskId, projectId, projectId, ...(readable ? [JSON.stringify(ids), ...readable.values] : []), ...folder.values] } };
+  const saved = savedArchiveVersionsGuard(ids, taskId, projectId);
+  return { id, statements, guard: { sql: `${saved.sql}${readableGuard} AND ${folder.sql}`,
+    values: [...saved.values, ...(readable ? [JSON.stringify(ids), ...readable.values] : []), ...folder.values] } };
 }
 
 export type NativeArchiveInput = {
@@ -189,9 +197,7 @@ export async function packageSourceSelection(db: Database, input: { projectId: s
   for (const scene of input.scenes) {
     const confirmed = confirmation(scene.id);
     const archive = confirmed ? archives.get(confirmed.archiveId) : undefined;
-    const latest = handovers.find(handover => handover.taskId === scene.languageTaskId);
-    const outdated = latest?.verification === "missing" && archive !== undefined && archive.createdAt < latest.createdAt;
-    if (!archive || archive.taskId !== scene.languageTaskId || !archive.valid || outdated) missingTasks.add(scene.languageTaskId);
+    if (!archive || archive.taskId !== scene.languageTaskId || !publishableArchive(archive, handovers)) missingTasks.add(scene.languageTaskId);
     else if (confirmed!.sceneVersion !== scene.version || confirmed!.videoVersionId !== scene.fileVersionId) staleScenes.push(scene.id);
   }
   if (missingTasks.size) throw new PublicError(`Choose a valid internal production archive for language task(s): ${[...missingTasks].sort().join(", ")}.`, 409, "DESERET_ARCHIVE_REQUIRED");
@@ -202,10 +208,13 @@ export async function packageSourceSelection(db: Database, input: { projectId: s
       .bind(randomUUID(), input.projectId, input.packageId, scene.id, scene.version, scene.languageTaskId, scene.fileVersionId, confirmation(scene.id)!.archiveId, input.email, input.now)),
     guard: {
       sql: `NOT EXISTS(SELECT 1 FROM deseret_archive_files af WHERE af.archive_id IN (SELECT value FROM json_each(?)) AND NOT EXISTS(${liveVersionSql("v.id=af.file_version_id", "af.language_project_id", "?")}))
+        AND NOT EXISTS(SELECT 1 FROM deseret_production_archives a JOIN deseret_task_handovers h
+          ON h.project_id=a.project_id AND h.language_project_id=a.language_project_id
+          WHERE a.id IN (SELECT value FROM json_each(?)) AND h.verification='missing' AND a.created_at<h.created_at)
         AND NOT EXISTS(SELECT 1 FROM handover_records WHERE status='pending' AND language_project_id IN (SELECT value FROM json_each(?)))
         AND NOT EXISTS(SELECT 1 FROM deseret_archive_files af JOIN aigc_file_versions v ON v.id=af.file_version_id JOIN aigc_files f ON f.id=v.file_id JOIN aigc_folders folder ON folder.id=f.folder_id
           WHERE af.archive_id IN (SELECT value FROM json_each(?)) AND af.role='project' AND folder.folder_code<>'${ENGINEERING_FOLDER}')`,
-      values: [JSON.stringify(archiveIds), input.projectId, input.projectId, JSON.stringify(taskIds), JSON.stringify(archiveIds)],
+      values: [JSON.stringify(archiveIds), input.projectId, input.projectId, JSON.stringify(archiveIds), JSON.stringify(taskIds), JSON.stringify(archiveIds)],
     },
   };
 }
