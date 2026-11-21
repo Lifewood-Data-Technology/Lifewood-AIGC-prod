@@ -20,7 +20,7 @@ node scripts/deployment/inventory-test-source.mjs --env "$TEST_ENV" --out "$NEW_
 2. 最终导出前暂停源站写入及后台任务，等待上传和交接出队，记录同一截止点的库与对象清单。若暂停写入不可接受，需要另行设计增量追平。迁移期间控制新的写入来源。
 3. 在 Ubuntu Test 执行 `bash scripts/deployment/export-test-db.sh "$NEW_PRIVATE_EXPORT_DIR"`。将生成的 `database.sql.gz` 和校验文件经受控加密渠道传给运维。此导出不带源库 CREATE DATABASE 或 USE 指令。归档库里仍可能包含配置、个人资料及会话数据，按私有备份管理。
 4. 运维复核导出中的 DEFINER、视图、触发器、事件及显式源库引用。检查 MySQL login-path 指向隔离的目标实例，确保恢复账号的权限限定在目标范围。在空目标执行 `bash scripts/deployment/restore-production-db.sh "$PRIVATE_EXPORT_DIR" aigc-prod-restore --restore-reviewed-empty-target`。若中断，保留日志，换空目标重新恢复。
-5. 从发布目录执行 `LIFEWOOD_ENV_FILE=/etc/lifewood/aigc.env node scripts/mysql-migrate.mjs`。随包有 0001–0009，包含 Deseret 字段。对比迁移指纹、逐表行数、关键外键关系、项目及文件版本。正式启用前处置测试登录会话、测试账号、未完成上传、待发回调和环境专属配置。需保留的加密数据应核实密钥兼容性或完成重加密。
+5. 从发布目录执行 `LIFEWOOD_ENV_FILE=/etc/lifewood/aigc.env node scripts/mysql-migrate.mjs`。随包有 0001–0010，包含 Deseret 字段及内部制作留档表（0010）。对比迁移指纹、逐表行数、关键外键关系、项目及文件版本。正式启用前处置测试登录会话、测试账号、未完成上传、待发回调和环境专属配置。需保留的加密数据应核实密钥兼容性或完成重加密。
 
 ## 3. Wasabi 对象迁移 / Object migration
 
@@ -62,7 +62,7 @@ test -s dist-mysql/launcher/server.mjs
 node scripts/deployment/prepare-public-config.mjs --env "$PROD_BASE_ENV" --origin https://www.aigc.lifewood.com --out "$NEW_PRIVATE_CONFIG_DIR"
 ```
 
-依模板安装私有配置、证书和服务文件；核对服务账号对应用、配置、证书的权限。运行目录 `/opt/lifewood/aigc/current` 指向本次 release。systemd 的 Node 路径应指向实际 Node 24，Nginx 转发至本机 3002。模板生成器默认关闭 Deseret 对接；待正式双方地址、签名、桶授权及待发任务核对完成后再启用。Deseret 的带图成片退回（`FilmEvidenceEnabled`）须在 AIGC 部署并验证返修接收后才能开启，见[成片 QA 返修接收修复](DESERET_QA_REVISION_REPAIR_20261121.md)。发布不再外发制作脚本；推荐先部署 Deseret 本轮版本，用于屏蔽历史脚本，并为已收旧事件提供精确回执查询，见[发布不外发制作脚本](DESERET_SCRIPT_CONFIDENTIALITY_20261121.md)。测试代理 7897 仅在正式主机有同一受控代理且实测通过时配置。
+依模板安装私有配置、证书和服务文件；核对服务账号对应用、配置、证书的权限。运行目录 `/opt/lifewood/aigc/current` 指向本次 release。systemd 的 Node 路径应指向实际 Node 24，Nginx 转发至本机 3002。模板生成器默认关闭 Deseret 对接；待正式双方地址、签名、桶授权及待发任务核对完成后再启用。Deseret 的带图成片退回（`FilmEvidenceEnabled`）须在 AIGC 部署并验证返修接收后才能开启，见[成片 QA 返修接收修复](DESERET_QA_REVISION_REPAIR_20261121.md)。发布不再外发制作脚本；推荐先部署 Deseret 本轮版本，用于屏蔽历史脚本，并为已收旧事件提供精确回执查询，见[发布不外发制作脚本](DESERET_SCRIPT_CONFIDENTIALITY_20261121.md)；分镜送审只需视频和时长，不再填写脚本，见[Deseret 分镜不再填写脚本](DESERET_SCENE_WITHOUT_SCRIPT_20261121.md)。内部制作留档、发布绑定与接手核验只保存在 AIGC（迁移 0010），见[内部制作留档](DESERET_PRODUCTION_CONTINUITY_20261121.md)。测试代理 7897 仅在正式主机有同一受控代理且实测通过时配置。
 
 ```bash
 sudo systemd-analyze verify /etc/systemd/system/aigc-public.service

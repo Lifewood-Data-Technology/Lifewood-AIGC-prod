@@ -27,6 +27,6 @@ export function loadProductionDraft(storage:Storage,email:string,taskId:string,m
   // another entry was clicked. Never create a new submission to bypass it.
   return drafts.find(draft=>{
     const request=draft?.pending as Draft|undefined;
-    return request&&["checkpoint","daily","final","materials"].includes(String(request.kind))&&request.languageProjectId===taskId&&request.submissionId;
+    return request&&["checkpoint","daily","final","materials","archive"].includes(String(request.kind))&&request.languageProjectId===taskId&&request.submissionId;
   })||drafts[0];
 }

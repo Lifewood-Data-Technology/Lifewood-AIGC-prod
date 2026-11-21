@@ -29,3 +29,14 @@ export function editorUploadLabel(stage: string | undefined, locale: "zh" | "en"
   if (stage === "final_production") return locale === "zh" ? (replacing ? "替换待审成片" : "上传成片送审") : (replacing ? "Replace pending final" : "Submit final for QC");
   return locale === "zh" ? "提交制作视频" : "Submit production video";
 }
+
+/**
+ * Whether a production submission needs its note. A Deseret scene submitted for internal QC in the storyboard
+ * round needs only its video and duration; replacing a pending video still needs its reason, and assembled
+ * finals, daily reports and ordinary tasks keep their note. The server decides `storyboard` from the scene
+ * registration that joins the submission transaction; the client mirrors it for the button state.
+ */
+export function submissionNoteRequired(input: { mode: string; storyboard: boolean; replacing: boolean }) {
+  if (input.mode === "materials") return false;
+  return !(input.mode === "final" && input.storyboard && !input.replacing);
+}

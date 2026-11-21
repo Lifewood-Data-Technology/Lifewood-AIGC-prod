@@ -8,6 +8,7 @@ const labels: Record<string, (number: number | null) => string> = {
   final: () => "a final submission",
   final_material: () => "a final submission's materials",
   report: number => number ? `daily report v${number}` : "a daily report",
+  archive: number => number ? `internal production archive #${number}` : "an internal production archive",
   delivery: () => "a delivery",
   share: () => "a share link",
   standard: () => "a material standard",
@@ -22,6 +23,7 @@ export async function fileVersionReferences(db: Database, target: Target) {
   return (await db.prepare(`SELECT v.version_number, r.kind, r.number FROM aigc_file_versions v JOIN (
       SELECT m.file_version_id AS version_id, 'report' AS kind, cp.version_number AS number FROM production_checkpoint_files m JOIN production_checkpoints cp ON cp.id=m.checkpoint_id
       UNION ALL SELECT m.file_version_id, 'final_material', NULL FROM production_final_submission_files m
+      UNION ALL SELECT m.file_version_id, 'archive', a.archive_number FROM deseret_archive_files m JOIN deseret_production_archives a ON a.id=m.archive_id
       UNION ALL SELECT s.final_version_id, 'final', NULL FROM production_final_submissions s
       UNION ALL SELECT q.file_id, 'quality', q.round_number FROM quality_rounds q
       UNION ALL SELECT q.report_file_id, 'quality_report', q.round_number FROM quality_rounds q WHERE q.report_file_id IS NOT NULL
@@ -50,6 +52,7 @@ export function versionsUnreferenced(target: { versionId: string } | { logicalFi
     `NOT EXISTS(SELECT 1 FROM production_checkpoint_files m WHERE m.file_version_id IN (${versions}))`,
     `NOT EXISTS(SELECT 1 FROM production_final_submission_files m WHERE m.file_version_id IN (${versions}))`,
     `NOT EXISTS(SELECT 1 FROM production_final_submissions s WHERE s.final_version_id IN (${versions}))`,
+    `NOT EXISTS(SELECT 1 FROM deseret_archive_files m WHERE m.file_version_id IN (${versions}))`,
     `NOT EXISTS(SELECT 1 FROM material_standards m WHERE m.file_version_id IN (${versions}))`,
     ...("logicalFileId" in target ? ["NOT EXISTS(SELECT 1 FROM material_standards m WHERE m.logical_file_id=?)"] : []),
   ];

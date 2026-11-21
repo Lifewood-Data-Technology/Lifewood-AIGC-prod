@@ -15,7 +15,7 @@ export function directUploads() {
 export function directUploadService() {
   return createDirectUploadService({db:env.DB,bucket:env.FILES,
     previewAuthority:directVideoPreviewAuthority,
-    async authorizeList(actor,taskId){await productionWorkspaceContext(actor,taskId,true,true);},
+    async authorizeList(actor,taskId,purpose){await productionWorkspaceContext(actor,taskId,true,true,purpose==='archive');},
     observe:metric=>console.info({event:'direct-upload.timing',...metric}),
     async beforeCreate(actor,input){if(input.endpoint==='/api/production-workspace')scheduleStagingMaintenance(actor);},
     async dispatch(actor,input,file,thumbnail,execution){

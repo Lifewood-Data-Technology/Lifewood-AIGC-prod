@@ -6,6 +6,8 @@ import { isStoryboardFileVersion, scopeDeseretReview, type DeseretScene, type De
 import { approvedSceneCharacters } from "../lib/deseret-producer-brief";
 import DeseretProducerBrief, { DeseretBriefFiles } from "./DeseretProducerBrief";
 import SelectControl from "./SelectControl";
+import DeseretArchivePanel, { usableArchives } from "./DeseretArchivePanel";
+import { openProductionWorkspace } from "./ProductionWorkspace";
 import { MenuIcon } from "./MenuIcon";
 import { LogIcon } from "./AdminLogControls";
 
@@ -24,7 +26,6 @@ const copy = {
     assign: "Assign revisions",
     scenes: "Scenes",
     add: "Save scene",
-    script: "Scene script",
     duration: "Duration in seconds",
     file: "Production file version",
     choose: "Select a file version",
@@ -72,7 +73,6 @@ const copy = {
     assign: "分派返修",
     scenes: "分镜",
     add: "保存分镜",
-    script: "分镜脚本",
     duration: "时长（秒）",
     file: "制作文件版本",
     choose: "选择文件版本",
@@ -179,6 +179,10 @@ function DeseretProductionState({
   const [reload, setReload] = useState(0);
   const [note, setNote] = useState("");
   const [finalFileVersionId, setFinalFileVersionId] = useState("");
+  // The lead's explicit per-scene archive confirmations (keyed by round, scene, version and video), and the
+  // per-task archive offered by "apply to all scenes of this task".
+  const [archiveChoice, setArchiveChoice] = useState<Record<string, string>>({});
+  const [taskApply, setTaskApply] = useState<Record<string, string>>({});
   const [finalDuration, setFinalDuration] = useState("");
   const intake = data?.intake;
   const stage = data?.stage;
@@ -348,6 +352,29 @@ function DeseretProductionState({
       : unapprovedScenes.length
         ? (zh ? `尚有 ${unapprovedScenes.length} 个分镜缺少就绪且通过质检的视频版本。` : `${unapprovedScenes.length} scene(s) still need a ready, quality-approved video version.`)
         : "";
+  // Publication gate: the lead explicitly confirms an internal archive for every scene (video) of the round. A
+  // confirmation is keyed by round, scene, version and video, so a new round, video or version needs a new one;
+  // nothing is applied without the lead's action. One archive may be applied to all scenes of a task at once.
+  const taskLabel = (task: string) => data.tasks.find(item => item.id === task)?.language ?? task;
+  const finalVersion = (task: string) => 1 + data.packages.filter(pack => pack.phase === "final" && pack.files.some(file => file.languageTaskId === task)).length;
+  const roundScenes = phase === "final"
+    ? (latestFinal ? [{ id: `final-${latestFinal.languageTaskId}`, languageTaskId: latestFinal.languageTaskId, version: finalVersion(latestFinal.languageTaskId), fileVersionId: latestFinal.id, label: c.final }] : [])
+    : data.scenes.map(scene => ({ id: scene.id, languageTaskId: scene.languageTaskId, version: scene.version, fileVersionId: scene.fileVersionId, label: `${c.scene} ${scene.order}` }));
+  type RoundScene = (typeof roundScenes)[number];
+  const roundTasks = [...new Set(roundScenes.map(scene => scene.languageTaskId))];
+  // The round: this project and source revision, the phase, and how many packages of that phase were already
+  // published. A published round ends its confirmations, so a returned round asks again even for unchanged videos.
+  const round = `${projectId}|${data.sourceRevision}|${phase}|${data.packages.filter(pack => pack.phase === phase).length}`;
+  const confirmKey = (scene: RoundScene) => `${round}|${scene.id}|${scene.version}|${scene.fileVersionId}`;
+  const confirmedArchive = (scene: RoundScene) => usableArchives(data, scene.languageTaskId).find(archive => archive.id === archiveChoice[confirmKey(scene)]);
+  const archiveGaps = roundTasks.filter(task => !usableArchives(data, task).length).map(taskLabel);
+  const unconfirmed = roundScenes.filter(scene => usableArchives(data, scene.languageTaskId).length && !confirmedArchive(scene));
+  const gateReason = publishReason || (archiveGaps.length ? `${zh ? "缺少有效内部留档：" : "Internal archive missing: "}${archiveGaps.join(", ")}`
+    : unconfirmed.length ? `${zh ? "请确认以下镜头的内部留档：" : "Confirm the internal archive for: "}${unconfirmed.map(scene => scene.label).join(", ")}` : "");
+  const sources = Object.fromEntries(roundScenes.map(scene => [scene.id, { archiveId: confirmedArchive(scene)?.id ?? "", sceneVersion: scene.version, videoVersionId: scene.fileVersionId }]));
+  const videoName = (scene: RoundScene) => data.fileCandidates.find(file => file.id === scene.fileVersionId)?.name ?? scene.fileVersionId;
+  const archiveOptions = (task: string) => usableArchives(data, task).map(archive =>
+    <option key={archive.id} value={archive.id}>#{archive.number} · {archive.projectVersion.name} v{archive.projectVersion.version}</option>);
   return (
     <section className="deseret-production-panel" data-role={data.role}>
       <header className="deseret-project-heading">
@@ -422,14 +449,42 @@ function DeseretProductionState({
               <strong>
                 {c.scene} {scene.order} · v{scene.version}
               </strong>
-              <p className="deseret-production-script">{scene.script}</p>
+              {/* A historical script stays visible inside AIGC; new scenes have none. */}
+              {scene.script ? <p className="deseret-production-script">{scene.script}</p> : null}
               <small>{scene.duration}s</small>
             </article>
           ))}
         </section>
       )}
+      {data.role !== "qc" && data.archives && (
+        <DeseretArchivePanel data={data} taskId={taskId} locale={locale} busy={busy} command={command}
+          onUpload={task => openProductionWorkspace(task, "materials", undefined, undefined, undefined, { archive: true })} />
+      )}
       {can("package.publish") && (
         <section className="pm-detail-card">
+          {roundTasks.map(task => (
+            <fieldset key={task} className="deseret-archive-gate">
+              <legend>{zh ? "内部留档" : "Internal archive"} · {taskLabel(task)}</legend>
+              <div data-task-apply={task}>
+                <SelectControl locale={locale} name={`apply-archive-${task}`} value={taskApply[task] ?? ""} onChange={event => setTaskApply({ ...taskApply, [task]: event.target.value })}>
+                  <option value="">{zh ? "选择留档" : "Choose an archive"}</option>
+                  {archiveOptions(task)}
+                </SelectControl>
+                <button type="button" disabled={busy || !usableArchives(data, task).some(archive => archive.id === taskApply[task])}
+                  onClick={() => setArchiveChoice({ ...archiveChoice, ...Object.fromEntries(roundScenes.filter(scene => scene.languageTaskId === task).map(scene => [confirmKey(scene), taskApply[task]])) })}>
+                  {zh ? "应用到本任务全部镜头" : "Apply to all scenes of this task"}
+                </button>
+              </div>
+              {roundScenes.filter(scene => scene.languageTaskId === task).map(scene => (
+                <label key={scene.id} data-scene-confirm={scene.id}>{scene.label} · v{scene.version} · {videoName(scene)}
+                  <SelectControl locale={locale} name={`confirm-archive-${scene.id}`} value={confirmedArchive(scene)?.id ?? ""} onChange={event => setArchiveChoice({ ...archiveChoice, [confirmKey(scene)]: event.target.value })}>
+                    <option value="">{zh ? "请确认留档" : "Confirm an archive"}</option>
+                    {archiveOptions(task)}
+                  </SelectControl>
+                </label>
+              ))}
+            </fieldset>
+          ))}
           {phase === "final" && (
             <>
               <label>
@@ -467,7 +522,7 @@ function DeseretProductionState({
               label={`${c.publish} · ${phase === "final" ? c.final : c.storyboard}`}
               icon="previews"
               busy={busy}
-              reason={publishReason}
+              reason={gateReason}
               onClick={() =>
                 void command(
                   "package.publish",
@@ -476,8 +531,9 @@ function DeseretProductionState({
                         phase,
                         fileVersionId: finalFileVersionId,
                         duration: Number(finalDuration),
+                        sources,
                       }
-                    : { phase },
+                    : { phase, sources },
                 ).catch(() => {})
               }
             />
@@ -627,7 +683,6 @@ function SceneEditor({
   const [sceneId, setSceneId] = useState("");
   const [characterIds, setCharacterIds] = useState<string[]>([]);
   const characters = approvedSceneCharacters(data.brief);
-  const [script, setScript] = useState("");
   const [duration, setDuration] = useState("");
   const [fileVersionId, setFileVersionId] = useState("");
   const editableTaskIds = new Set(data.tasks.filter(task => progressEditableStatuses.includes(task.status)).map(task => task.id));
@@ -640,12 +695,10 @@ function SceneEditor({
   let reason = "";
   if (!fileVersionId && !files.length) reason = zh ? "提交分镜视频后，可在这里修改已登记的分镜。" : "Submit a scene video to edit its registered scene here.";
   else if (!selectedFileAvailable) reason = zh ? "请选择可用的视频版本。" : "Choose an available video version.";
-  else if (!script.trim()) reason = zh ? "请填写分镜脚本。" : "Enter the scene script.";
   else if (!(Number(duration) > 0 && Number(duration) <= 3600)) reason = zh ? "请输入 0 至 3600 秒之间的有效时长。" : "Enter a duration greater than zero and up to 3600 seconds.";
   function selectScene(id: string) {
     setSceneId(id);
     const scene = data.scenes.find((item) => item.id === id);
-    setScript(scene?.script || "");
     setCharacterIds((scene?.characterIds ?? []).filter(id => characters.some(character => character.id === id)));
     setDuration(scene ? String(scene.duration) : "");
     setFileVersionId(scene?.fileVersionId || "");
@@ -659,7 +712,6 @@ function SceneEditor({
       order: existing?.order ?? Math.max(0, ...data.scenes.map(scene => scene.order)) + 1,
       version: existing?.version ?? 1,
       duration: Number(duration),
-      script,
       characterIds,
       voiceId: existing?.voiceId ?? "",
       fileVersionId,
@@ -695,17 +747,6 @@ function SceneEditor({
                 </option>
               ))}
           </SelectControl>
-        </label>
-        <label className="deseret-scene-script">
-          {c.script}
-          <textarea
-            rows={4}
-            maxLength={20000}
-            required
-            placeholder={zh ? "例如，镜头从书封推近到书名，旁白读出第一句。请写明画面和对应台词。" : "For example, move from the cover to the title as the narrator reads the opening line. Describe the shot and its spoken words."}
-            value={script}
-            onChange={(event) => setScript(event.target.value)}
-          />
         </label>
         <label>
           {c.duration}

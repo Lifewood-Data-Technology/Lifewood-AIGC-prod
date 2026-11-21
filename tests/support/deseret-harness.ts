@@ -27,7 +27,7 @@ const NOW = Date.parse("2026-11-20T09:00:00.000Z");
 const schema = `
 CREATE TABLE mutation_guards (id TEXT PRIMARY KEY, satisfied INTEGER NOT NULL, CONSTRAINT mutation_guard_current CHECK (satisfied = 1));
 CREATE TABLE projects (id TEXT PRIMARY KEY, name TEXT, status TEXT, due_date TEXT, deleted_at TEXT, client_id TEXT);
-CREATE TABLE clients (id TEXT PRIMARY KEY, deleted_at TEXT);
+CREATE TABLE clients (id TEXT PRIMARY KEY, deleted_at TEXT, status TEXT NOT NULL DEFAULT 'Active');
 CREATE TABLE business_deletion_locks (scope_id TEXT);
 CREATE TABLE language_projects (id TEXT PRIMARY KEY, project_id TEXT, video_id TEXT, language TEXT, language_code TEXT, status TEXT,
   editor_email TEXT, reviewer_email TEXT, revision INTEGER NOT NULL DEFAULT 1, updated_at TEXT);
@@ -45,18 +45,31 @@ CREATE TABLE audit_logs (id INTEGER PRIMARY KEY, action TEXT, actor_email TEXT, 
 const nativeSchema = `
 CREATE TABLE project_files (id TEXT PRIMARY KEY, project_id TEXT, language_project_id TEXT, directory TEXT, original_name TEXT, storage_name TEXT, object_key TEXT,
   mime_type TEXT, size_bytes INTEGER, version INTEGER, uploader_email TEXT, status TEXT, source TEXT DEFAULT 'project', created_at TEXT, deleted_at TEXT);
-CREATE TABLE aigc_folders (id TEXT PRIMARY KEY, parent_folder_id TEXT, language_project_id TEXT, folder_code TEXT, deleted_at TEXT);
-CREATE TABLE aigc_files (id TEXT PRIMARY KEY, language_project_id TEXT, folder_id TEXT, status TEXT, deleted_at TEXT);
+CREATE TABLE aigc_folders (id TEXT PRIMARY KEY, parent_folder_id TEXT, language_project_id TEXT, folder_code TEXT, deleted_at TEXT, node_type TEXT, path_cache TEXT);
+CREATE TABLE aigc_files (id TEXT PRIMARY KEY, language_project_id TEXT, folder_id TEXT, status TEXT, deleted_at TEXT, source TEXT NOT NULL DEFAULT 'project');
 CREATE TABLE aigc_storage_objects (id TEXT PRIMARY KEY, object_key TEXT, etag TEXT, bucket_name TEXT, endpoint_url TEXT, region_name TEXT);
-CREATE TABLE aigc_file_versions (id TEXT PRIMARY KEY, file_id TEXT, version_number INTEGER, original_name TEXT, checksum_sha256 TEXT, size_bytes INTEGER, storage_object_id TEXT, created_at TEXT);
+CREATE TABLE aigc_file_versions (id TEXT PRIMARY KEY, file_id TEXT, version_number INTEGER, original_name TEXT, checksum_sha256 TEXT, size_bytes INTEGER, storage_object_id TEXT, created_at TEXT, created_by TEXT);
+CREATE TABLE production_flow_events (id TEXT PRIMARY KEY, language_project_id TEXT); CREATE TABLE production_flow_files (event_id TEXT, file_version_id TEXT);
+CREATE TABLE production_checkpoints (id TEXT PRIMARY KEY, language_project_id TEXT, editor_email TEXT, status TEXT, version_number INTEGER, completeness_status TEXT, updated_at TEXT);
+CREATE TABLE production_checkpoint_files (checkpoint_id TEXT, file_version_id TEXT); CREATE TABLE production_final_submission_files (submission_id TEXT, file_version_id TEXT, category TEXT);
 CREATE TABLE quality_rounds (id INTEGER PRIMARY KEY, file_id TEXT, result TEXT);
 CREATE TABLE asset_collections (id TEXT PRIMARY KEY, status TEXT);
 CREATE TABLE asset_collection_files (collection_id TEXT, file_id TEXT);
 CREATE TABLE production_final_submissions (id TEXT PRIMARY KEY, final_version_id TEXT, language_project_id TEXT, submitted_by TEXT);
 CREATE TABLE production_submission_receipts (id TEXT PRIMARY KEY, actor_email TEXT, response_json TEXT);
 CREATE TABLE aigc_file_operations (id INTEGER PRIMARY KEY, file_id TEXT, folder_id TEXT, operation TEXT, actor_email TEXT, details TEXT, created_at TEXT);
+CREATE TABLE handover_records (id TEXT PRIMARY KEY, language_project_id TEXT, checkpoint_id TEXT, from_user_email TEXT, to_user_email TEXT, status TEXT, created_at TEXT);
+CREATE TABLE deseret_production_archives (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, language_project_id TEXT NOT NULL, archive_number INTEGER NOT NULL,
+  created_by_email TEXT NOT NULL, next_steps TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE (language_project_id, archive_number));
+CREATE TABLE deseret_archive_files (id TEXT PRIMARY KEY, archive_id TEXT NOT NULL, language_project_id TEXT NOT NULL, file_version_id TEXT NOT NULL, role TEXT NOT NULL,
+  created_at TEXT NOT NULL, UNIQUE (archive_id, file_version_id));
+CREATE TABLE deseret_package_sources (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, package_id TEXT NOT NULL, scene_id TEXT NOT NULL, scene_version INTEGER NOT NULL,
+  language_project_id TEXT NOT NULL, video_version_id TEXT NOT NULL, archive_id TEXT NOT NULL, confirmed_by_email TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE (package_id, scene_id));
+CREATE TABLE deseret_task_handovers (id TEXT PRIMARY KEY, handover_id TEXT NOT NULL UNIQUE, project_id TEXT NOT NULL, language_project_id TEXT NOT NULL, handover_kind TEXT NOT NULL,
+  from_editor_email TEXT NOT NULL, to_editor_email TEXT NOT NULL, archive_id TEXT, verification TEXT NOT NULL, verification_notes TEXT NOT NULL,
+  verified_by_email TEXT, verified_at TEXT, created_at TEXT NOT NULL);
 `;
-export type NativeRow = { id: string; taskId: string; directory: string; status: string; name: string; mimeType: string; size: number; sha256: string; qualityApproved?: boolean; projectId?: string; source?: string };
+export type NativeRow = { id: string; taskId: string; directory: string; status: string; name: string; mimeType: string; size: number; sha256: string; qualityApproved?: boolean; projectId?: string; source?: string; createdBy?: string };
 
 const video = (id: string, version: number, task = "task-1") => ({
   id, fileVersionId: id, languageTaskId: task, version, name: `book-trailer-${task}-v${version}.mp4`, size: 4096,
@@ -92,8 +105,8 @@ export function createHarness(initial: DeseretIntegrationState = finalReviewStat
   let failingSummary = false;
   db.sqlite.exec(schema);
   db.sqlite.exec(nativeSchema);
-  db.sqlite.exec("INSERT INTO clients VALUES ('client-1', NULL)");
-  const folder = db.sqlite.prepare("INSERT INTO aigc_folders VALUES (?,?,?,?,NULL)");
+  db.sqlite.exec("INSERT INTO clients (id, deleted_at) VALUES ('client-1', NULL)");
+  const folder = db.sqlite.prepare("INSERT INTO aigc_folders (id,parent_folder_id,language_project_id,folder_code,deleted_at) VALUES (?,?,?,?,NULL)");
   for (const taskId of ["task-1", "task-2", "task-x"]) {
     folder.run(`folder-${taskId}`, null, taskId, "root");
     for (const code of ["01", "02", "03", "04"]) folder.run(`folder-${taskId}-${code}`, `folder-${taskId}`, taskId, code);
@@ -103,9 +116,9 @@ export function createHarness(initial: DeseretIntegrationState = finalReviewStat
     const folderId = `folder-${file.taskId}-${file.directory.slice(0, 2)}`;
     db.sqlite.prepare("INSERT INTO project_files (id,project_id,language_project_id,directory,original_name,storage_name,object_key,mime_type,size_bytes,version,uploader_email,status,source,created_at) VALUES (?,?,?,?,?,?,?,?,?,1,?,?,?,?)")
       .run(file.id, file.projectId ?? PROJECT, file.taskId, file.directory, file.name, file.name, `native/${file.id}`, file.mimeType, file.size, "service:deseret", file.status, file.source ?? "project", "2026-11-19T00:00:00.000Z");
-    db.sqlite.prepare("INSERT INTO aigc_files VALUES (?,?,?,?,NULL)").run(`logical-${file.id}`, file.taskId, folderId, file.status);
+    db.sqlite.prepare("INSERT INTO aigc_files (id,language_project_id,folder_id,status,deleted_at) VALUES (?,?,?,?,NULL)").run(`logical-${file.id}`, file.taskId, folderId, file.status);
     db.sqlite.prepare("INSERT INTO aigc_storage_objects VALUES (?,?,?,?,?,?)").run(`object-${file.id}`, `native/${file.id}`, "etag", "", "", "");
-    db.sqlite.prepare("INSERT INTO aigc_file_versions VALUES (?,?,1,?,?,?,?,?)").run(file.id, `logical-${file.id}`, file.name, file.sha256, file.size, `object-${file.id}`, "2026-11-19T00:00:00.000Z");
+    db.sqlite.prepare("INSERT INTO aigc_file_versions (id,file_id,version_number,original_name,checksum_sha256,size_bytes,storage_object_id,created_at,created_by) VALUES (?,?,1,?,?,?,?,?,?)").run(file.id, `logical-${file.id}`, file.name, file.sha256, file.size, `object-${file.id}`, "2026-11-19T00:00:00.000Z", file.createdBy ?? null);
     if (file.qualityApproved) db.sqlite.prepare("INSERT INTO quality_rounds (file_id,result) VALUES (?,'approved')").run(file.id);
   }
   for (const file of [finalV1, otherTaskFinal]) addNative(nativeVideo(file));

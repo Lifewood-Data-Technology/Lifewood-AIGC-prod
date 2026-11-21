@@ -1,4 +1,5 @@
 import { deseretSceneSubmission } from "./deseret-scene-submission";
+import { batchHandoverCheckpoint, deseretHandoverStatements, plannedHandoverArchive } from "./deseret-production-archive";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { prepareProjectDateSync } from "./project-date-sync";
@@ -4145,7 +4146,7 @@ function folderAreaVisible(account: PublicAccount, pathCache: string) {
 // Rechecked inside the delete transaction: a checkpoint/final may have been
 // committed after the friendly preflight error above.
 function unreferencedProductionFileSql(fileExpression: string) {
-  return `NOT EXISTS(SELECT 1 FROM aigc_file_versions v WHERE v.file_id=${fileExpression} AND (EXISTS(SELECT 1 FROM production_checkpoint_files m WHERE m.file_version_id=v.id) OR EXISTS(SELECT 1 FROM production_final_submission_files m WHERE m.file_version_id=v.id) OR EXISTS(SELECT 1 FROM production_final_submissions s WHERE s.final_version_id=v.id)))`;
+  return `NOT EXISTS(SELECT 1 FROM aigc_file_versions v WHERE v.file_id=${fileExpression} AND (EXISTS(SELECT 1 FROM production_checkpoint_files m WHERE m.file_version_id=v.id) OR EXISTS(SELECT 1 FROM production_final_submission_files m WHERE m.file_version_id=v.id) OR EXISTS(SELECT 1 FROM production_final_submissions s WHERE s.final_version_id=v.id) OR EXISTS(SELECT 1 FROM deseret_archive_files a WHERE a.file_version_id=v.id)))`;
 }
 
 // Exact versions bound to formal records (QC, final, report, delivery, share, standard) stay.
@@ -6729,7 +6730,20 @@ export function workflowSubmissionDatabase() { return database(); }
 export function productionStagingBucket() { return fileBucket(); }
 
 /** Narrow server-only integration surface for the task workspace. */
-export async function productionWorkspaceContext(email: string, taskId: string, write = false, pendingFinal = false) {
+/** Task statuses closed to Deseret internal archives (shared with the integration service's rule). */
+export const deseretArchiveClosedStatuses = ["待分配", "待补充资料", "已暂停", "已交付", "已归档", "已终止"];
+/** Internal archives need a Deseret project whose intake was accepted; any production or review stage but archived. */
+async function assertDeseretArchiveOpen(db: Database, projectId: string) {
+  const link = await db.prepare("SELECT state_json FROM deseret_project_links WHERE id=?").bind(projectId).first<{ state_json: string }>();
+  const state = link ? JSON.parse(link.state_json) as { intake?: string; stage?: string } : null;
+  if (!state || state.intake !== "accepted" || state.stage === "archived")
+    throw new PublicError("Internal archives are available for accepted Deseret projects.", 409, "DESERET_ARCHIVE_CLOSED");
+}
+/**
+ * `archive`: the Deseret internal archive upload. It stays open through internal QC and publisher review, so it
+ * skips the open-production-stage gate and accepts any non-closed task status; the editor must still be the actor.
+ */
+export async function productionWorkspaceContext(email: string, taskId: string, write = false, pendingFinal = false, archive = false) {
   const actor = await getAccount(email);
   if (!actor || !["production", "project"].includes(actor.access) || !(await canAccessLanguage(actor, taskId)))
     throw new PublicError("Task access is required.", 403);
@@ -6737,8 +6751,9 @@ export async function productionWorkspaceContext(email: string, taskId: string, 
   const task = await db.prepare(`SELECT lp.*, (SELECT name FROM accounts WHERE email=lp.editor_email) AS editor_name, p.name AS project_name, p.project_owner_email, p.client_id, c.name AS client_name, pv.name AS video_name FROM language_projects lp JOIN projects p ON p.id = lp.project_id JOIN clients c ON c.id=p.client_id LEFT JOIN project_videos pv ON pv.id=lp.video_id WHERE lp.id = ? AND (${visibleProjectSql("p")} ) AND c.deleted_at IS NULL AND c.status<>'Disabled'`).bind(taskId).first<Record<string, unknown>>();
   if (!task) throw new PublicError("Task is unavailable.", 404);
   if (typeof task.requirements === "string" && task.requirements.startsWith("{")) await projectReadableDeseretRequirements(db, [task], "project_id", "requirements");
-  if (write) await assertDeseretProductionOpen(db, String(task.project_id));
-  if (write && (actor.access !== "production" || task.editor_email !== actor.email || !(progressEditableStatuses.includes(String(task.status)) || pendingFinal && task.status === "待质检")))
+  if (write && archive) await assertDeseretArchiveOpen(db, String(task.project_id));
+  else if (write) await assertDeseretProductionOpen(db, String(task.project_id));
+  if (write && (actor.access !== "production" || task.editor_email !== actor.email || !(archive ? !deseretArchiveClosedStatuses.includes(String(task.status)) : progressEditableStatuses.includes(String(task.status)) || pendingFinal && task.status === "待质检")))
     throw new PublicError("This task is not open for production updates.", 403);
   if (write) await requireCapability(actor, "files.upload");
   // The write-time form of this context's checks: task access plus the customer state checked above.
@@ -9963,10 +9978,18 @@ export async function runWorkflowAction(
       statements.push(db.prepare("UPDATE language_projects SET editor_email=?,reviewer_email=?,status=?,revision=revision+1,updated_at=? WHERE id=?").bind(editor||null,reviewer||null,nextStatus,now,task.id));
       statements.push(db.prepare("INSERT INTO language_assignment_history (id,language_project_id,previous_editor_email,new_editor_email,previous_reviewer_email,new_reviewer_email,reason,changed_by,created_at) VALUES (?,?,?,?,?,?,?,?,?)").bind(crypto.randomUUID(),task.id,task.editor_email||null,editor||null,task.reviewer_email||null,reviewer||null,previous?`${reason}\n${notes}`:"Initial assignment",actor.email,now));
       if(previous){
-        const snapshot=await db.prepare("SELECT id,completeness_status FROM production_checkpoints WHERE language_project_id=? AND status IN ('ready','frozen') ORDER BY version_number DESC LIMIT 1").bind(task.id).first<Record<string,unknown>>();
+        // Deseret editor changes: only the outgoing editor's own valid checkpoint, re-checked in this transaction.
+        const picked=await batchHandoverCheckpoint(db,{projectId:String(task.project_id),taskId:String(task.id),fromEmail:previous,role});
+        const snapshot=picked.checkpoint;
+        conditions.push(picked.guard.sql);values.push(...picked.guard.values);
         const handoverId=crypto.randomUUID();
         statements.push(db.prepare("INSERT INTO handover_records (id,language_project_id,checkpoint_id,from_user_email,to_user_email,reason,handover_type,status,completeness_status,risk_notes,attachments_json,initiated_by,accept_notes,created_at,accepted_at) VALUES (?,?,?,?,?,?,'pm_confirmed','accepted',?,?,?,?,?,?,?)").bind(handoverId,task.id,snapshot?.id||null,previous,assignee.email,reason,snapshot?.completeness_status||"incomplete",notes,JSON.stringify(attachments),actor.email,`Confirmed by project manager; role=${role}; progress=${task.production_progress??"unreported"}`,now,now));
         if(snapshot&&role==="editor")statements.push(db.prepare("UPDATE production_checkpoints SET status='frozen',frozen_at=COALESCE(frozen_at,?),updated_at=? WHERE id=?").bind(now,now,snapshot.id));
+        // Deseret only: the incoming editor inherits the task's archives and records their own verification later.
+        if(role==="editor"){
+          const recorded=await deseretHandoverStatements(db,{handoverId,projectId:String(task.project_id),taskId:String(task.id),kind:"batch",fromEmail:previous,toEmail:String(assignee.email),now});
+          statements.push(...recorded.statements);conditions.push(recorded.guard.sql);values.push(...recorded.guard.values);
+        }
       }
       for(const recipient of [...new Set([String(assignee.email),previous].filter(Boolean))])statements.push(db.prepare("INSERT INTO notifications (id,recipient_email,type,title_zh,title_en,body_zh,body_en,target_type,target_id,is_read,created_at,actor_email,actor_name,actor_role,event_action) VALUES (?,?,'assignment','人员安排已生效','Assignment is effective',?,?,'language',?,0,?,?,?,?,?)").bind(crypto.randomUUID(),recipient,`项目负责人已确认${role==="editor"?"剪辑":"质检"}安排，立即生效。历史日报、成片与进度保留。`,`The project manager confirmed the ${role} assignment, effective immediately. Reports, finals and progress are retained.`,task.id,now,actor.email,actor.name,actor.access,action));
       statements.push(prepareAuditStatement(db, "INSERT INTO audit_logs (action,actor_email,subject,details,created_at) VALUES ('project.schedule',?,?,?,?)").bind(actor.email,task.id,`${role}: ${previous||"unassigned"} -> ${assignee.email}; ${reason}; ${notes}`,now));
@@ -10041,7 +10064,10 @@ export async function runWorkflowAction(
       )
       .bind(languageProjectId, target.editor_email)
       .first<Record<string, unknown>>();
-    if (!emergency && (!checkpoint || (checkpoint.completeness_status !== "complete" && !(Number(checkpoint.attachment_schema) === 2 && String(checkpoint.completed_work || "").trim()))))
+    const checkpointComplete = Boolean(checkpoint && (checkpoint.completeness_status === "complete" || (Number(checkpoint.attachment_schema) === 2 && String(checkpoint.completed_work || "").trim())));
+    // A Deseret task may instead hand over its newest valid internal archive; daily reports stay optional.
+    const archiveInPlace = !emergency && !checkpointComplete ? await plannedHandoverArchive(db, String(target.project_id), languageProjectId) : null;
+    if (!emergency && !checkpointComplete && !archiveInPlace)
       throw new PublicError(
         "A complete checkpoint from the current editor is required for a planned handover.",
       );
@@ -10153,6 +10179,8 @@ export async function runWorkflowAction(
           action
           ),
       );
+    const deseretHandover = await deseretHandoverStatements(db, { handoverId, projectId: String(target.project_id), taskId: languageProjectId, kind: emergency ? "emergency" : "planned", fromEmail: String(target.editor_email), toEmail: toEditorEmail, now, ...(archiveInPlace ? { archiveId: archiveInPlace } : {}) });
+    statements.push(...deseretHandover.statements);
     const handoverAuthority = await authorityGuard("projects.manage");
     await guardedMutation(
       db,
@@ -10162,7 +10190,8 @@ export async function runWorkflowAction(
        AND EXISTS (SELECT 1 FROM language_projects WHERE id = ? AND revision = ? AND editor_email = ? AND COALESCE(reviewer_email, '') = ? AND status NOT IN ('已交付', '已归档', '已终止'))
        AND EXISTS (SELECT 1 FROM projects project JOIN clients client ON client.id = project.client_id WHERE project.id = ? AND project.status NOT IN ('已归档', '已终止') AND client.deleted_at IS NULL AND client.status <> 'Disabled')
        AND NOT EXISTS (SELECT 1 FROM handover_records WHERE language_project_id = ? AND status = 'pending')
-       ${checkpoint ? "AND EXISTS(SELECT 1 FROM production_checkpoints WHERE id=? AND editor_email=? AND status IN ('ready','frozen') AND updated_at=?)" : ""}`,
+       ${checkpoint ? "AND EXISTS(SELECT 1 FROM production_checkpoints WHERE id=? AND editor_email=? AND status IN ('ready','frozen') AND updated_at=?)" : ""}
+       AND ${deseretHandover.guard.sql}`,
       [
         ...handoverAuthority.values,
         toEditorEmail,
@@ -10176,6 +10205,7 @@ export async function runWorkflowAction(
         String(target.project_id),
         languageProjectId,
         ...(checkpoint ? [String(checkpoint.id), String(target.editor_email), String(checkpoint.updated_at)] : []),
+        ...deseretHandover.guard.values,
       ],
       statements,
     );

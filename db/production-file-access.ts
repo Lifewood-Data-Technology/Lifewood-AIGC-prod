@@ -1,5 +1,6 @@
 import type { Database } from "./database";
 import { liveLogicalFileSql } from "./file-integrity";
+import { archivedVersionReadableSql } from "./deseret-production-archive";
 
 /** Version-level authorization shared by metadata, previews and downloads. */
 export function productionReadableVersionQuery(email:string,versionId="") {
@@ -21,7 +22,8 @@ export function productionReadableVersionQuery(email:string,versionId="") {
       OR EXISTS(SELECT 1 FROM production_checkpoint_files m JOIN handover_records h ON h.checkpoint_id=m.checkpoint_id
         WHERE m.file_version_id=v.id AND h.language_project_id=lp.id AND h.to_user_email=? AND h.status IN ('pending','accepted'))
       OR EXISTS(SELECT 1 FROM production_final_submission_files m JOIN production_final_submissions s ON s.id=m.submission_id
-        WHERE m.file_version_id=v.id AND s.language_project_id=lp.id))
+        WHERE m.file_version_id=v.id AND s.language_project_id=lp.id)
+      OR ${archivedVersionReadableSql})
     UNION SELECT v.id FROM aigc_file_versions v JOIN aigc_files f ON f.id=v.file_id JOIN project_files pf ON pf.id=v.id JOIN aigc_folders folder ON folder.id=f.folder_id
     WHERE f.source='internal' AND (folder.node_type LIKE 'library%' OR folder.path_cache LIKE '/Asset Library%') AND (?='' OR v.id=?) AND pf.deleted_at IS NULL AND pf.status<>'deleted' AND ${liveLogicalFileSql("f")}`, values:[email,versionId,versionId,email,email,versionId,versionId]};
 }

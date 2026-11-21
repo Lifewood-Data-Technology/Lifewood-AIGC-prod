@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { isRecoverableDirectUpload, isRecoverableProductionUpload, type RecoverableDirectUpload, type DirectUploadInput } from "../lib/direct-upload-contract";
+import { isRecoverableDirectUpload, isRecoverableProductionUpload, productionRecoveryTarget, type RecoverableDirectUpload, type DirectUploadInput } from "../lib/direct-upload-contract";
 import { forgetCancelledUpload, resumeDirectUpload } from "../lib/direct-upload-client";
 import { workspaceFetch } from "../lib/tab-session";
 import { productionWorkspaceError } from "../lib/production-workspace-errors";
@@ -103,7 +103,7 @@ export default function UnfinishedProductionUploads(props:Props) {
     {globalList&&!loading&&!visible.length&&!restricted.length&&!error&&<p>{filterId?(zh?'该记录已结束或不在本人可访问范围。':'This record is finished or outside your accessible uploads.'):(zh?'暂无未完成上传。':'No unfinished uploads.')}</p>}
     {globalList&&<UploadRecordSummaries records={restricted} locale={locale}/>}
     {error&&<p role="alert">{productionWorkspaceError(error,locale)}</p>}{noticeText&&notice!=='processing'&&!visible.some(item=>feedback[item.input.id])&&<p role="status">{noticeText}</p>}
-    {globalList&&recoveredInput?.endpoint==='/api/production-workspace'&&<button type="button" className="secondary-button" disabled={Boolean(running)||disabled} onClick={()=>{window.dispatchEvent(new CustomEvent('lifewood-production-workspace',{detail:{taskId:recoveredInput.fields.task,mode:recoveredInput.fields.purpose,recoveredFileId:recoveredInput.id}}));setRecoveredInput(null);setNotice('');}}>{zh?'返回原表单确认':'Return to original form'}</button>}
+    {globalList&&recoveredInput?.endpoint==='/api/production-workspace'&&<button type="button" className="secondary-button" disabled={Boolean(running)||disabled} onClick={()=>{window.dispatchEvent(new CustomEvent('lifewood-production-workspace',{detail:productionRecoveryTarget({task:recoveredInput.fields.task,purpose:recoveredInput.fields.purpose,id:recoveredInput.id})}));setRecoveredInput(null);setNotice('');}}>{zh?'返回原表单确认':'Return to original form'}</button>}
     <UploadQueue locale={locale} items={visible.map(item=>({id:item.input.id,name:item.input.file.name,size:item.input.file.size,phase:running===item.input.id?'uploading':item.state==='cancelled'?'cancelled':'unconfirmed',progress:running===item.input.id?progress:0,uploadId:item.state==='cancelled'?undefined:item.input.id}))}
       describe={queue=>{const item=visible.find(item=>item.input.id===queue.id)!;return item.state==='cancelled'?(zh?'已取消':'Cancelled'):item.expired||item.state==='expired'?(zh?'已过期':'Expired'):running===item.input.id?(progress<0?zh?'正在核对…':'Checking…':`${progress}%`):item.busy?(zh?'正在处理':'Processing'):item.interrupted?(zh?'上次处理已中断，请核对':'Interrupted; check required'):item.state==='verifying'?(zh?'上传校验待确认':'Verification unconfirmed'):zh?'未完成，可核对或续传':'Unfinished; check or resume';}}
       extra={queue=>{const item=visible.find(item=>item.input.id===queue.id)!,message=feedback[item.input.id],closed=item.expired||['cancelled','expired'].includes(item.state);return <div className="production-file-actions">

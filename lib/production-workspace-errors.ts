@@ -30,7 +30,7 @@ export function productionWorkspaceError(message: string, locale: "zh" | "en", m
     [/accept the publisher brief/i,"请先受理出版社的制作资料，再分配人员。"],
     [/select the scene associated/i,"替换待审视频时，请选择该视频对应的原分镜。"],
     [/scene belongs to another/i,"请选择当前语言任务的分镜。"],
-    [/register the scene|check the scene script/i,"请填写分镜脚本及有效时长（0–3600 秒，不含 0），再提交质检。"],
+    [/register the scene|check the scene (?:script and )?duration/i,"请选择分镜视频并填写有效时长（0–3600 秒，不含 0），再提交质检。"],
     [/requested scene revisions require/i,"返修分镜须上传并关联新的文件版本。"],
     [/up to 200 scenes/i,"每个审阅包最多包含 200 个分镜。"],
     [/pending final changed/i,"待审成片或审核状态已变化，请刷新核对后重新提交。"],

@@ -1,6 +1,9 @@
 import { prepareAuditStatement } from "./audit-write";
 import { previousProductionRender, lastProductionFinal } from "./deseret-render-history";
 import { deseretSceneSubmission } from "./deseret-scene-submission";
+import { submissionNoteRequired } from "../lib/deseret-editor-stage";
+import { archiveStatements, engineeringFolderGuard, nativeArchiveFiles } from "./deseret-production-archive";
+import { deseretArchiveClosedStatuses } from "./backend";
 import type { DeseretIntegrationState } from "../lib/deseret-workspace";
 import { uploadTypeError, categoryUploadPurpose, uploadSizeError } from "../lib/upload-policy";
 import {projectStorageKey} from "../lib/project-storage-key";
@@ -24,10 +27,10 @@ type Row = Record<string, unknown>;
 type Context = Awaited<ReturnType<typeof productionWorkspaceContext>>;
 const retentionMs = 7 * 86400000;
 const activeStates = "('待制作','制作中','质检驳回','客户要求修改')";
-function taskGuard(ctx: Context, revision = true, pendingFinal = false) {
+function taskGuard(ctx: Context, revision = true, pendingFinal = false, archive = false) {
   const states = pendingFinal ? "('待制作','制作中','质检驳回','客户要求修改','待质检')" : activeStates;
   if (!ctx.authority) throw new PublicError("Write access is required.", 403);
-  return { sql: `${ctx.authority.sql} AND EXISTS (SELECT 1 FROM language_projects lp JOIN projects p ON p.id=lp.project_id JOIN clients c ON c.id=p.client_id WHERE lp.id=? AND lp.editor_email=? ${revision ? "AND lp.revision=?" : ""} AND lp.status IN ${states} AND p.status NOT IN ('已终止','已归档','terminated','archived') AND c.deleted_at IS NULL AND c.status<>'Disabled')`,
+  return { sql: `${ctx.authority.sql} AND EXISTS (SELECT 1 FROM language_projects lp JOIN projects p ON p.id=lp.project_id JOIN clients c ON c.id=p.client_id WHERE lp.id=? AND lp.editor_email=? ${revision ? "AND lp.revision=?" : ""} AND ${archive ? `lp.status NOT IN (${deseretArchiveClosedStatuses.map(status => `'${status}'`).join(",")})` : `lp.status IN ${states}`} AND p.status NOT IN ('已终止','已归档','terminated','archived') AND c.deleted_at IS NULL AND c.status<>'Disabled')`,
     values: [...ctx.authority.values, String(ctx.task.id), ctx.actor.email, ...(revision ? [Number(ctx.task.revision)] : [])] };
 }
 
@@ -37,8 +40,8 @@ function insertRows(db: Database, table: string, columns: string[], rows: (strin
 }
 
 export async function stageProductionFile(email: string, taskId: string, id: string, purpose: string, category: string, file: File, execution?: UploadExecution) {
-  const ctx = await productionWorkspaceContext(email, taskId, true, purpose === "final");
-  if (!/^[a-f0-9-]{36}$/.test(id) || !["checkpoint", "daily", "final", "materials"].includes(purpose) || !(validProductionCategory(category) || category === "final")) throw new PublicError("Invalid upload selection.");
+  const ctx = await productionWorkspaceContext(email, taskId, true, purpose === "final", purpose === "archive");
+  if (!/^[a-f0-9-]{36}$/.test(id) || !["checkpoint", "daily", "final", "materials", "archive"].includes(purpose) || !(validProductionCategory(category) || category === "final")) throw new PublicError("Invalid upload selection.");
   const sizeError = uploadSizeError(file, Boolean(execution?.prepareOnly || verifiedUpload(file)));
   if (sizeError) throw new PublicError(sizeError, 413, "UPLOAD_FILE_SIZE");
   const detected = detectedUploadFile(file);
@@ -48,7 +51,7 @@ export async function stageProductionFile(email: string, taskId: string, id: str
   if (execution?.prepareOnly) {
     const identity=await ctx.db.prepare('SELECT actor_email,language_project_id,purpose FROM production_staged_files WHERE id=?').bind(id).first<Row>();
     if(identity&&(identity.actor_email!==email||identity.language_project_id!==taskId||identity.purpose!==purpose))throw new PublicError('Upload identity mismatch.',409);
-    return {prepared:true,guard:taskGuard(ctx,false,purpose === "final")};
+    return {prepared:true,guard:taskGuard(ctx,false,purpose === "final",purpose === "archive")};
   }
   const checksum = await hashFile(file);
   const existing = await ctx.db.prepare("SELECT * FROM production_staged_files WHERE id=?").bind(id).first<Row>();
@@ -63,7 +66,7 @@ export async function stageProductionFile(email: string, taskId: string, id: str
       }
       if(!head)await ctx.bucket.put(String(existing.object_key),file,{httpMetadata:{contentType:detected.mimeType}});
       if(!head||head.size===file.size){
-        const guard=taskGuard(ctx,false,purpose === "final"),result={ok:true,file:stagedDto(existing)},now=new Date().toISOString();
+        const guard=taskGuard(ctx,false,purpose === "final",purpose === "archive"),result={ok:true,file:stagedDto(existing)},now=new Date().toISOString();
         await execution.commit([ctx.db.prepare("UPDATE production_staged_files SET state='ready',updated_at=? WHERE id=? AND state='uploading'").bind(now,id)],result,{sql:`${guard.sql} AND EXISTS(SELECT 1 FROM production_staged_files WHERE id=? AND actor_email=? AND state='uploading' AND expires_at>?)`,values:[...guard.values,id,email,now]});
         return result;
       }
@@ -78,7 +81,7 @@ export async function stageProductionFile(email: string, taskId: string, id: str
   const keyForVersion = (version: number) => projectStorageKey({environment: process.env.LIFEWOOD_ENV, legacyKey: `production-staging/${id}`,
     folderNames: stageFolders,
     fileId: id, objectId: id, version, originalName: file.name, extension: detected.extension});
-  const guard = taskGuard(ctx, false, purpose === "final");
+  const guard = taskGuard(ctx, false, purpose === "final", purpose === "archive");
   let key = "";
   // Reserve readable names in the serialized database batch before storage I/O.
   // Expired records retain their reservation so a delayed cleaner cannot delete
@@ -135,11 +138,14 @@ function stagedDto(row: Row) {
 /** Reconcile only the caller's exact upload. A missing HEAD is not a failure. */
 export async function productionUploadStatus(email: string, taskId: string, id: string) {
   if (!/^[a-f0-9-]{36}$/.test(id)) throw new PublicError("Invalid upload selection.");
-  const ctx = await productionWorkspaceContext(email, taskId, true, true);
-  const row = await ctx.db.prepare("SELECT * FROM production_staged_files WHERE id=? AND actor_email=? AND language_project_id=? AND expires_at>?")
-    .bind(id,email,taskId,new Date().toISOString()).first<Row>();
+  // Authorise by the staged upload's own purpose: a Deseret archive upload stays open through QC and review.
+  const owned = await (await productionWorkspaceContext(email, taskId)).db.prepare("SELECT purpose FROM production_staged_files WHERE id=? AND actor_email=? AND language_project_id=?").bind(id,email,taskId).first<Row>();
+  const archiveUpload = owned?.purpose === "archive";
+  const ctx = await productionWorkspaceContext(email, taskId, true, true, archiveUpload);
+  const row = await ctx.db.prepare("SELECT * FROM production_staged_files WHERE id=? AND actor_email=? AND language_project_id=? AND expires_at>? AND purpose=?")
+    .bind(id,email,taskId,new Date().toISOString(),String(owned?.purpose ?? "")).first<Row>();
   if (!row) return {state:"unconfirmed"};
-  if (ctx.task.status === "待质检" && row.purpose !== "final") throw new PublicError("Only final uploads can change while awaiting review.",403);
+  if (ctx.task.status === "待质检" && row.purpose !== "final" && !archiveUpload) throw new PublicError("Only final uploads can change while awaiting review.",403);
   // A direct upload becomes ready only with its verified atomic receipt. The
   // legacy size-only HEAD recovery must never promote a direct reservation.
   const direct=await ctx.db.prepare('SELECT state FROM direct_upload_sessions WHERE id=? AND actor_email=?').bind(id,email).first<{state:string}>();
@@ -148,7 +154,7 @@ export async function productionUploadStatus(email: string, taskId: string, id: 
   if (row.state !== "uploading" || !row.object_key) return {state:"unconfirmed"};
   const head = await ctx.bucket.head(String(row.object_key));
   if (!head || head.size !== Number(row.size_bytes)) return {state:"unconfirmed"};
-  const guard = taskGuard(ctx, false, row.purpose === "final"), now = new Date().toISOString();
+  const guard = taskGuard(ctx, false, row.purpose === "final", archiveUpload), now = new Date().toISOString();
   await guardedMutation(ctx.db, `${guard.sql} AND EXISTS(SELECT 1 FROM production_staged_files WHERE id=? AND actor_email=? AND language_project_id=? AND state IN ('uploading','ready') AND expires_at>?)`,
     [...guard.values,id,email,taskId,now], [ctx.db.prepare("UPDATE production_staged_files SET state='ready',updated_at=? WHERE id=? AND state='uploading'").bind(now,id)]);
   console.info({event:"upload.storage.reconciled",fileId:id});
@@ -236,12 +242,15 @@ export async function submitProductionWorkspace(email: string, payload: Record<s
   const hash=await submissionDigest(canonicalSubmission("production.workspace.submit",payload));
   const previous=await db.prepare("SELECT * FROM production_submission_receipts WHERE id=?").bind(id).first<Row>();
   if(previous){if(previous.actor_email!==email||previous.payload_hash!==hash)throw new PublicError("Submission identity mismatch.",409);return JSON.parse(String(previous.response_json));}
-  const ctx=await productionWorkspaceContext(email,taskId,true,payload.kind === "final"), {task,actor}=ctx;
+  const ctx=await productionWorkspaceContext(email,taskId,true,payload.kind === "final",payload.kind === "archive"), {task,actor}=ctx;
   const final=payload.kind==="final";
   const daily=payload.kind==="daily";
-  const materials=payload.kind==="materials";
+  // Deseret internal archive: saved like materials, then recorded as an archive in the same transaction.
+  const archive=payload.kind==="archive";
+  const materials=payload.kind==="materials"||archive;
   const reopening=payload.kind==="flow_reopen",flowStage=payload.flowStage||"";
   let flowEvent:DatabaseStatement|null=null;
+  if(archive&&(payload.flowStage||payload.kind!=="archive"))throw new PublicError("Invalid production flow action.");
   if(flowStage||reopening){
     const publisherProject = await db.prepare("SELECT id FROM deseret_project_links WHERE id=?").bind(task.project_id).first();
     if (publisherProject) throw new PublicError("Use the storyboard workflow for this publisher project.", 409, "DESERET_STORYBOARD_WORKFLOW");
@@ -290,7 +299,10 @@ export async function submitProductionWorkspace(email: string, payload: Record<s
   if(!daily&&source&&Number(source.attachment_schema)>=3)throw new PublicError("Use the daily report workflow to preserve revisions.",409);
   if(!daily&&source&&String(source.updated_at)!==payload.sourceUpdatedAt)throw new PublicError("This checkpoint changed. Reload before editing.",409);
   if(directEdit&&(source?.status!=="ready"||String(source.editable_until)<new Date().toISOString()||await db.prepare("SELECT id FROM handover_records WHERE checkpoint_id=? LIMIT 1").bind(source.id).first()))throw new PublicError("This checkpoint is locked. Create a correction instead.",409);
-  if(!materials&&(!note||note.length>1000||!Number.isInteger(percent)||percent<0||(!final&&!daily&&percent>=100)||percent>100))throw new PublicError("Enter work notes and a valid progress percentage.");
+  // A Deseret scene submitted in the storyboard round needs only its video and duration. Whether this final is
+  // such a scene is decided below by the scene registration that joins this transaction; a replacement keeps
+  // its required reason and every other submission keeps its note.
+  if(!materials&&((!note&&!(final&&!replacing))||note.length>1000||!Number.isInteger(percent)||percent<0||(!final&&!daily&&percent>=100)||percent>100))throw new PublicError("Enter work notes and a valid progress percentage.");
   if(Number(payload.expectedRevision)!==Number(task.revision))throw new PublicError("Task changed. Refresh before saving.",409);
   let ids:string[];
   try{ids=parseProductionFileIds(payload.fileIds);}catch{throw new PublicError("Invalid file selection (maximum 50 files).");}
@@ -299,8 +311,11 @@ export async function submitProductionWorkspace(email: string, payload: Record<s
   const now=new Date().toISOString();
   const staged=(await db.prepare("SELECT * FROM production_staged_files WHERE id IN (SELECT value FROM json_each(?)) AND actor_email=? AND language_project_id=? AND state='ready' AND expires_at>?").bind(JSON.stringify(ids),email,taskId,now).all<Row>()).results;
   const existingData=await productionWorkspaceData(email,taskId);
+  if(final&&!note&&!existingData.deseret)throw new PublicError("Enter work notes and a valid progress percentage.");
   const existing=[...existingData.files,...existingData.libraryFiles].filter(f=>ids.includes(String(f.id)));
-  if(materials&&(!ids.length||!flowStage&&staged.length!==ids.length))throw new PublicError("Select temporary files to save as materials.");
+  if(materials&&!archive&&(!ids.length||!flowStage&&staged.length!==ids.length))throw new PublicError("Select temporary files to save as materials.");
+  if(archive&&(!ids.length||existing.some(file=>file.library)))throw new PublicError("Choose this task's engineering file to archive.",422,"DESERET_ARCHIVE_INVALID");
+  if(archive&&String(payload.nextSteps||"").length>4000)throw new PublicError("Next steps are limited to 4000 characters.",422,"DESERET_ARCHIVE_INVALID");
   if(flowStage&&existing.some(file=>file.library||file.currentVersionId!==file.id||!productionFileCategories.some(category=>category.code===file.category)))throw new PublicError("Choose current task production files for this stage.");
   if(new Set([...staged.map(f=>String(f.id)),...existing.map(f=>String(f.id))]).size!==ids.length)throw new PublicError("One or more files are unavailable. Review your selection.",409);
   const selectedFinalId=String(payload.finalVersionId||"");
@@ -326,7 +341,7 @@ export async function submitProductionWorkspace(email: string, payload: Record<s
     let sceneId: unknown;
     if (publisher?.stage === "production" && payload.deseretScene) {
       try { sceneId = JSON.parse(payload.deseretScene)?.id; }
-      catch { throw new PublicError("Check the scene script and duration.", 400, "DESERET_SCENE_INVALID"); }
+      catch { throw new PublicError("Check the scene duration.", 400, "DESERET_SCENE_INVALID"); }
     }
     priorFinal = await previousProductionRender(db, taskId, {
       replacesVersionId: oldFinal ? String(oldFinal.current_version_id) : undefined,
@@ -338,7 +353,9 @@ export async function submitProductionWorkspace(email: string, payload: Record<s
   if(replacing && (!priorFinal || priorFinal.id !== oldFinal?.file_id || priorFinal.current_version_id !== oldFinal?.current_version_id))
     throw new PublicError("Choose a new video to replace the pending final.",409,"FINAL_REPLACEMENT_CHANGED");
   for(const file of [...existing,...staged]){
-    const fileId=String(file.id), category=final&&fileId===finalId?"final":categories[fileId]||productionFileCategories.find(c=>c.code===file.category)?.id||String(file.category);
+    // An archive never reclassifies a saved version: its real folder decides its category.
+    const savedArchiveFile=archive&&!staged.some(row=>String(row.id)===String(file.id));
+    const fileId=String(file.id), category=final&&fileId===finalId?"final":!savedArchiveFile&&categories[fileId]||productionFileCategories.find(c=>c.code===file.category)?.id||String(file.category);
     if(category==="final"&&(!final||fileId!==finalId))throw new PublicError("Only one file can be the final video.");
     if(category!=="final"&&!validProductionCategory(category))throw new PublicError("Choose a category for every production file.");
     selectedCategories.set(fileId,category);
@@ -389,8 +406,22 @@ export async function submitProductionWorkspace(email: string, payload: Record<s
     insertRows(db,"aigc_file_versions",["id","file_id","version_number","original_name","db_file_name","storage_object_id","mime_type","size_bytes","checksum_sha256","created_by","created_at"],rows.versions),
     insertRows(db,"aigc_files",["id","language_project_id","folder_id","display_name","file_kind","current_version_id","status","source","created_by","created_at","updated_at"],rows.files,true));
   const sceneSubmission = final ? await deseretSceneSubmission(db, String(task.project_id), taskId, finalId, payload.deseretScene, oldFinal ? String(oldFinal.current_version_id) : undefined) : null;
+  // Its storyboard result is guarded by the stored project revision in the same transaction (guard below).
+  if(final&&!note&&submissionNoteRequired({mode:"final",storyboard:Boolean(sceneSubmission?.storyboard),replacing}))throw new PublicError("Enter work notes and a valid progress percentage.");
+  let archiveId:string|undefined,archivedSavedEngineering="";
+  if(archive){
+    // New uploads by the category they are committed under; saved versions by their real folder (never the form).
+    const files=nativeArchiveFiles({ids,projectVersionId:String(payload.archiveProjectVersionId||""),previewVersionId:String(payload.archivePreviewVersionId||""),
+      staged:staged.map(row=>({id:String(row.id),category:String(selectedCategories.get(String(row.id))),kind:String(row.file_kind)})),
+      existing:existing.map(row=>({id:String(row.id),folderCode:String(row.category),kind:String(row.kind)}))});
+    const recorded=archiveStatements(db,{projectId:String(task.project_id),taskId,email,now,nextSteps:String(payload.nextSteps||""),files});
+    archiveId=recorded.id;statements.push(...recorded.statements);
+    // A saved engineering version must still be filed under Project files when written (new uploads land there here).
+    const engineering=files.find(file=>file.role==="project")!.id;
+    if(existing.some(row=>String(row.id)===engineering))archivedSavedEngineering=engineering;
+  }
   const checkpointId=directEdit?String(source!.id):id;
-  const output={ok:true,submissionId:id,checkpointId:final||materials?undefined:checkpointId,finalVersionId:final?finalId:undefined,replacedVersionId:oldFinal?.current_version_id,...(materials?{fileIds:ids}:{}), ...(sceneSubmission && existingData.deseret ? {deseretPhase: sceneSubmission.storyboard ? "storyboard" : "final"} : {})};
+  const output={ok:true,submissionId:id,checkpointId:final||materials?undefined:checkpointId,finalVersionId:final?finalId:undefined,replacedVersionId:oldFinal?.current_version_id,...(materials?{fileIds:ids}:{}),...(archiveId?{archiveId}:{}), ...(sceneSubmission && existingData.deseret ? {deseretPhase: sceneSubmission.storyboard ? "storyboard" : "final"} : {})};
   if(final){
     if(oldFinal){
       statements.push(db.prepare("UPDATE project_files SET status='superseded' WHERE id=? AND status='pending_qc'").bind(oldFinal.current_version_id));
@@ -425,9 +456,16 @@ export async function submitProductionWorkspace(email: string, payload: Record<s
     ...(!materials?[db.prepare("DELETE FROM production_checkpoint_drafts WHERE language_project_id=? AND editor_email=?").bind(taskId,email)]:[]),
     projectSummaryUpdateStatement(db,String(task.project_id)),
     db.prepare("UPDATE production_staged_files SET state='committed',committed_version_id=id,committed_submission_id=?,updated_at=? WHERE id IN(SELECT value FROM json_each(?))").bind(id,now,JSON.stringify(staged.map(f=>f.id))),
-    prepareAuditStatement(db, "INSERT INTO audit_logs(action,actor_email,subject,details,created_at) VALUES(?,?,?,?,?)").bind(materials?"production.materials_saved":final?"production.submitted_qc":daily?"production.daily_report_saved":directEdit?"production.checkpoint_edited":source?"production.checkpoint_corrected":"production.checkpoint_saved",email,checkpointId,materials?JSON.stringify({fileIds:ids}):note,now),
+    prepareAuditStatement(db, "INSERT INTO audit_logs(action,actor_email,subject,details,created_at) VALUES(?,?,?,?,?)").bind(archive?"production.deseret_archive_saved":materials?"production.materials_saved":final?"production.submitted_qc":daily?"production.daily_report_saved":directEdit?"production.checkpoint_edited":source?"production.checkpoint_corrected":"production.checkpoint_saved",email,checkpointId,materials?JSON.stringify({fileIds:ids}):note,now),
     db.prepare("INSERT INTO production_submission_receipts(id,actor_email,payload_hash,response_json,created_at) VALUES(?,?,?,?,?)").bind(id,email,hash,JSON.stringify(output),now));
-  const guard=taskGuard(ctx,true,replacing);
+  const guard=taskGuard(ctx,true,replacing,archive);
+  if(archivedSavedEngineering){const folder=engineeringFolderGuard(archivedSavedEngineering,taskId);guard.sql+=` AND ${folder.sql}`;guard.values.push(...folder.values);}
+  if(archive&&existing.length){
+    // Saved versions in an archive must still be readable by this editor when the archive is written.
+    const readable=productionReadableVersionQuery(email);
+    guard.sql+=` AND NOT EXISTS(SELECT 1 FROM json_each(?) chosen WHERE chosen.value NOT IN (${readable.sql}))`;
+    guard.values.push(JSON.stringify(existing.map(row=>String(row.id))),...readable.values);
+  }
   if(sceneSubmission){
     guard.sql+=` AND ${sceneSubmission.sql}`;
     guard.values.push(...sceneSubmission.values);

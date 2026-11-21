@@ -3,13 +3,15 @@ import { isStoryboardFileVersion, scopeDeseretReview } from "../lib/deseret-work
 import { createHash, randomUUID } from "node:crypto";
 import type { Database, DatabaseStatement } from "./database";
 import { guardedMutation } from "./mutation-guard";
+import { archiveCandidates, archiveSelection, packageSources, packageSourceSelection, taskArchives, taskHandovers } from "./deseret-production-archive";
+import { productionReadableVersionQuery } from "./production-file-access";
 import { prepareAuditStatement } from "./audit-write";
 import { PublicError } from "../lib/security-controls";
 import { progressEditableStatuses } from "../lib/task-file-access";
 import { validCalendarDate } from "../lib/employee-workflow";
 import { approvedFileIds, approvedSceneCharacters, producerBoundValue, producerBoundValues, producerDurationSeconds, versionedProductionLanguage } from "../lib/deseret-producer-brief";
 import { integrationBodyHash, validateHandoffManifest, type HandoffMaterial, type IntegrationConfig, type IntegrationEnvelope } from "../lib/deseret-integration-contract";
-import type { DeseretFeedback, DeseretIntegrationState, DeseretPublishedFile, DeseretReviewPackage, DeseretRevisionFrame, DeseretScene, DeseretWorkspace } from "../lib/deseret-workspace";
+import { joinedSceneScript, nextSceneVersion, optionalSceneScript, type DeseretFeedback, type DeseretIntegrationState, type DeseretPublishedFile, type DeseretReviewPackage, type DeseretRevisionFrame, type DeseretWorkspace } from "../lib/deseret-workspace";
 
 type Row = Record<string, unknown>;
 export type IntegrationProjectContext = {
@@ -45,6 +47,8 @@ export type IntegrationDependencies = {
 const identity = /^[A-Za-z0-9_-]{1,120}$/;
 const text = (value: unknown, maximum = 2000): value is string => typeof value === "string" && value.length <= maximum;
 const object = (value: unknown): value is Row => Boolean(value && typeof value === "object" && !Array.isArray(value));
+/** Language task statuses in which internal archives cannot be registered. */
+const archiveClosedStatuses = ["待分配", "待补充资料", "已暂停", "已交付", "已归档", "已终止"];
 function reject(message: string, code = "DESERET_INVALID", status = 400): never { throw new PublicError(message, status, code); }
 function initialState(materialsReady = false): DeseretIntegrationState {
   return { stage: "intake", intake: "pending", revision: 1, materials: materialsReady ? "ready" : "waiting_transfer", scenes: [], packages: [], feedback: [], authorFeedback: [], revisionSceneIds: [] };
@@ -518,6 +522,11 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
       if (state.stage === "revision") actions.push("revision.assign");
     }
     if (role === "lead") actions.push("outbox.retry");
+    // Internal continuity (AIGC only): archives stay open through internal QC and publisher review.
+    const continuityTaskIds = role === "qc" ? [] : [...taskIds];
+    const handovers = await taskHandovers(db, projectId, continuityTaskIds);
+    if (role !== "qc" && state.intake === "accepted" && state.stage !== "archived") actions.push("archive.register");
+    if (role === "producer" && handovers.some(handover => handover.verification === "pending" && handover.to === email)) actions.push("handover.verify");
     if (role === "producer" && state.intake === "accepted" && state.materials === "ready" && state.stage === "production" && taskRows.some(task => progressEditableStatuses.includes(String(task.status)))) actions.push("scene.save");
     const reviewFiles = role === "qc" ? await deps.nativeFiles(context, [
       ...state.scenes.map(scene => scene.fileVersionId),
@@ -569,6 +578,14 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
       fileCandidates: files.map(file => ({ id: file.id, version: file.version, name: file.name, languageTaskId: file.languageTaskId, size: file.size, mimeType: file.mimeType, sha256: file.sha256, qualityPassed: file.qualityPassed, finalSubmission: file.finalSubmission || previouslyPublishedFinal(state, file), storageReady: file.storageReady })), actions,
       transfers: role === "lead" ? (await db.prepare("SELECT id,direction,package_id,manifest_json,state,attempts,last_error FROM deseret_material_tasks WHERE project_id=? AND source_revision=? ORDER BY created_at,id").bind(projectId, row.source_revision).all<Row>()).results.map(item => ({ id: String(item.id), direction: String(item.direction), packageId: item.package_id ? String(item.package_id) : undefined, name: String(JSON.parse(String(item.manifest_json)).name), state: String(item.state), attempts: Number(item.attempts), lastError: item.last_error ? String(item.last_error) : undefined })) : [],
       outbox: role === "lead" ? (await db.prepare("SELECT id,event_type,state,attempts,last_error FROM deseret_outbox WHERE project_id=? ORDER BY created_at DESC LIMIT 50").bind(projectId).all<Row>()).results.map(item => ({ id: String(item.id), type: String(item.event_type), state: String(item.state), attempts: Number(item.attempts), lastError: item.last_error ? String(item.last_error) : undefined })) : [],
+      // AIGC-internal continuity; projected to the lead and the task's editor only, never to QC or Deseret.
+      ...(role === "qc" ? {} : {
+        archives: await taskArchives(db, projectId, continuityTaskIds),
+        // Editors see only versions they may already read; the lead keeps project access.
+        archiveCandidates: await archiveCandidates(db, projectId, continuityTaskIds, role === "producer" ? productionReadableVersionQuery(email) : undefined),
+        handovers,
+        ...(role === "lead" ? { packageSources: await packageSources(db, projectId) } : {}),
+      }),
     };
   }
 
@@ -611,7 +628,9 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
       if (!state.revisionSceneIds.length) reject("No requested revision is awaiting assignment.");
       state.stage = state.packages.at(-1)?.phase === "final" ? "final_production" : "production";
     } else if (input.action === "scene.save") {
-      if (!text(payload.id, 100) || !identity.test(payload.id) || !text(payload.script, 20000) || !String(payload.script).trim() || typeof payload.duration !== "number" || !Number.isFinite(payload.duration) || payload.duration <= 0 || payload.duration > 3600 || !Number.isSafeInteger(payload.order) || Number(payload.order) < 1 || !Array.isArray(payload.characterIds) || payload.characterIds.length > 100 || payload.characterIds.some(item => !text(item, 120)) || !text(payload.voiceId, 120)) reject("Check the scene details.");
+      // Video and duration only. An older client may still send a script; it is optional internal text.
+      const script = optionalSceneScript(payload.script);
+      if (!text(payload.id, 100) || !identity.test(payload.id) || script === false || typeof payload.duration !== "number" || !Number.isFinite(payload.duration) || payload.duration <= 0 || payload.duration > 3600 || !Number.isSafeInteger(payload.order) || Number(payload.order) < 1 || !Array.isArray(payload.characterIds) || payload.characterIds.length > 100 || payload.characterIds.some(item => !text(item, 120)) || !text(payload.voiceId, 120)) reject("Check the scene details.");
       const approvedIds = new Set(approvedSceneCharacters(current.brief).map(character => character.id));
       const characterIds = payload.characterIds as string[];
       if (new Set(characterIds).size !== characterIds.length || characterIds.some(id => !approvedIds.has(id))) reject("Select characters from the approved brief.", "DESERET_SCENE_CHARACTER_INVALID", 422);
@@ -623,14 +642,37 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
       if (!previous && state.scenes.length >= 200) reject("A review package supports up to 200 scenes.", "DESERET_SCENE_LIMIT", 422);
       if (previous && previous.languageTaskId !== file.languageTaskId) reject("A scene must remain in its assigned language task.", "DESERET_FORBIDDEN", 403);
       if (state.scenes.some(item => item.id !== payload.id && item.order === payload.order)) reject("Choose a unique scene order.");
-      const scene: DeseretScene = { id: payload.id, order: Number(payload.order), version: previous ? previous.version + 1 : 1, duration: payload.duration, script: payload.script, characterIds: payload.characterIds as string[], voiceId: payload.voiceId, fileVersionId: file.id, languageTaskId: file.languageTaskId };
-      if (previous && JSON.stringify({ ...previous, version: 0 }) === JSON.stringify({ ...scene, version: 0 })) scene.version = previous.version;
+      const scene = nextSceneVersion({ id: payload.id, order: Number(payload.order), duration: payload.duration, characterIds: payload.characterIds as string[], voiceId: payload.voiceId as string, fileVersionId: file.id, languageTaskId: file.languageTaskId }, previous, script);
       if (previous && state.revisionSceneIds.includes(scene.id) && scene.version !== previous.version && previous.fileVersionId === scene.fileVersionId) reject("Requested scene revisions require a newly registered video version.", "DESERET_NEW_VERSION_REQUIRED", 409);
       writeGuards.push("EXISTS(SELECT 1 FROM language_projects WHERE id=? AND project_id=? AND editor_email=? AND status IN (SELECT value FROM json_each(?)))");
       writeValues.push(file.languageTaskId, projectId, email, JSON.stringify(progressEditableStatuses));
       if (previous) state.scenes.splice(state.scenes.indexOf(previous), 1, scene);
       else state.scenes.push(scene);
       state.scenes.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+    } else if (input.action === "archive.register") {
+      // An internal archive of one task: its editor, or the lead for any task. Open through internal QC and
+      // publisher review; closed for unassigned, paused and finished tasks. Integration state is not changed.
+      const task = current.tasks.find(item => item.id === payload.taskId);
+      if (!task || (current.role === "producer" && task.editorEmail !== email)) reject("Choose one of your language tasks.", "DESERET_FORBIDDEN", 403);
+      if (archiveClosedStatuses.includes(task.status)) reject("This language task is not open for internal archives.", "DESERET_ARCHIVE_CLOSED", 409);
+      const selection = await archiveSelection(db, projectId, task.id, { projectVersionId: payload.projectVersionId as string, previewVersionId: (payload.previewVersionId || undefined) as string | undefined,
+        materialVersionIds: payload.materialVersionIds as string[] | undefined, nextSteps: payload.nextSteps as string | undefined }, email, at,
+        current.role === "producer" ? productionReadableVersionQuery(email) : undefined);
+      extra.push(...selection.statements);
+      writeGuards.push(selection.guard.sql, `EXISTS(SELECT 1 FROM language_projects WHERE id=? AND project_id=? AND status NOT IN (SELECT value FROM json_each(?))${current.role === "producer" ? " AND editor_email=?" : ""})`);
+      writeValues.push(...selection.guard.values, task.id, projectId, JSON.stringify(archiveClosedStatuses), ...(current.role === "producer" ? [email] : []));
+    } else if (input.action === "handover.verify") {
+      // The incoming editor's own check, separate from the staffing change that created the handover.
+      const handover = current.handovers?.find(item => item.id === payload.handoverId);
+      if (!handover || handover.to !== email || current.tasks.find(item => item.id === handover.taskId)?.editorEmail !== email) reject("This handover is not awaiting your verification.", "DESERET_FORBIDDEN", 403);
+      if (handover.verification !== "pending") reject("This handover has already been verified.", "DESERET_HANDOVER_VERIFIED", 409);
+      if (payload.result !== "verified" && payload.result !== "missing") reject("Choose whether the handed-over work can be continued.");
+      const notes = typeof payload.notes === "string" ? payload.notes.trim() : "";
+      if (notes.length > 4000 || (payload.result === "missing" && !notes)) reject("Describe what is missing (up to 4000 characters).");
+      extra.push(db.prepare("UPDATE deseret_task_handovers SET verification=?,verification_notes=?,verified_by_email=?,verified_at=? WHERE handover_id=? AND verification='pending'")
+        .bind(payload.result, notes, email, at, handover.id));
+      writeGuards.push("EXISTS(SELECT 1 FROM deseret_task_handovers h JOIN language_projects lp ON lp.id=h.language_project_id WHERE h.handover_id=? AND h.verification='pending' AND h.to_editor_email=? AND lp.editor_email=?)");
+      writeValues.push(handover.id, email, email);
     } else if (input.action === "package.withdraw") {
       const pack = state.packages.find(item => item.id === payload.packageId && !item.withdrawn);
       if (!pack) reject("The publication is unavailable.");
@@ -663,7 +705,7 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
         const previousFinal = state.packages.filter(pack => pack.phase === "final" && pack.files.some(file => file.languageTaskId === final.languageTaskId)).at(-1);
         if (state.revisionSceneIds.length && !previousFinal?.scenes.some(scene => state.revisionSceneIds.includes(scene.id))) reject("Publish the language task requested for final revision.", "DESERET_REVISION_TARGET_REQUIRED", 409);
         if (previousFinal && state.revisionSceneIds.some(id => previousFinal.scenes.some(scene => scene.id === id)) && previousFinal.files.some(file => file.fileVersionId === final.id)) reject("Final revisions require a newly registered video version.", "DESERET_NEW_VERSION_REQUIRED", 409);
-        scenes = [{ id: `final-${final.languageTaskId}`, order: 1, version: 1 + state.packages.filter(pack => pack.phase === "final" && pack.files.some(file => file.languageTaskId === final.languageTaskId)).length, duration: Number(payload.duration), script: scenes.filter(scene => scene.languageTaskId === final.languageTaskId).map(scene => scene.script).join("\n\n"), characterIds: [...new Set(scenes.filter(scene => scene.languageTaskId === final.languageTaskId).flatMap(scene => scene.characterIds))], voiceId: "", fileVersionId: final.id, languageTaskId: final.languageTaskId }];
+        scenes = [{ id: `final-${final.languageTaskId}`, order: 1, version: 1 + state.packages.filter(pack => pack.phase === "final" && pack.files.some(file => file.languageTaskId === final.languageTaskId)).length, duration: Number(payload.duration), ...joinedSceneScript(scenes.filter(scene => scene.languageTaskId === final.languageTaskId)), characterIds: [...new Set(scenes.filter(scene => scene.languageTaskId === final.languageTaskId).flatMap(scene => scene.characterIds))], voiceId: "", fileVersionId: final.id, languageTaskId: final.languageTaskId }];
         if (!Number.isFinite(scenes[0].duration) || scenes[0].duration <= 0 || scenes[0].duration > 14400) reject("Provide the final video duration.");
       }
       if (phase === "storyboard" && state.revisionSceneIds.some(id => {
@@ -692,6 +734,12 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
       if (characters.length !== selectedIds.size) reject("Update the scene characters before publishing.", "DESERET_SCENE_CHARACTER_INVALID", 422);
       const pack: DeseretReviewPackage = { characters, id: randomUUID(), phase: phase as "storyboard" | "final", version, publicationId: randomUUID(), publishedAt: at, scenes, files: packageFiles, filesReady: false };
       if (Buffer.byteLength(JSON.stringify({ scenes, files: packageFiles }), "utf8") > 850000) reject("The publication metadata exceeds the service request limit.", "DESERET_PACKAGE_TOO_LARGE", 413);
+      // Pin a valid internal archive to every scene of this round. The pinned sources live only in AIGC's own
+      // table; the package, its outbox event and its transfer tasks carry none of it.
+      const sources = await packageSourceSelection(db, { projectId, packageId: pack.id, scenes, sources: payload.sources, email, now: at });
+      extra.push(...sources.statements);
+      writeGuards.push(sources.guard.sql);
+      writeValues.push(...sources.guard.values);
       state.packages.push(pack);
       state.stage = phase === "final" ? "final_review" : "storyboard_review";
       state.revisionSceneIds = [];

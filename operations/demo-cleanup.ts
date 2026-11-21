@@ -8,7 +8,8 @@ interface CleanupBucket { list(options: {cursor?: string; limit: number}): Promi
 export const CLEANUP_PATH = "/__maintenance/demo-cleanup";
 export const PRESERVED_TABLES = ["accounts", "account_credentials", "account_mfa", "account_permissions", "account_sessions", "account_presence", "account_login_history", "login_attempts", "security_rate_limits", "editor_workspaces", "settings", "mutation_guards",
   "admin_log_deletion_previews", "admin_log_deletion_receipts", "audit_request_metadata", "business_deletion_jobs", "business_deletion_locks", "business_deletion_objects", "business_deletion_operations", "business_deletion_records", "direct_upload_sessions",
-  "deseret_project_links", "deseret_inbox", "deseret_outbox", "deseret_material_tasks", "deseret_handoff_history"] as const;
+  "deseret_project_links", "deseret_inbox", "deseret_outbox", "deseret_material_tasks", "deseret_handoff_history",
+  "deseret_production_archives", "deseret_archive_files", "deseret_package_sources", "deseret_task_handovers"] as const;
 export const DEMO_TABLES = [
   "business_name_translations",
   "production_flow_files", "production_flow_events",
@@ -27,7 +28,8 @@ const folderCondition = "id NOT IN (" + ROOT_FOLDERS.map(() => "?").join(",") + 
 const names = [...PRESERVED_TABLES, ...DEMO_TABLES, "aigc_folders"].sort();
 const preservedOrder: Record<string, string> = { accounts: "id", account_credentials: "email", account_mfa: "account_email", account_permissions: "id", account_sessions: "token_hash", account_presence: "token_hash", account_login_history: "id", login_attempts: "email", security_rate_limits: "key", editor_workspaces: "id", settings: "key", mutation_guards: "id",
   admin_log_deletion_previews: "id", admin_log_deletion_receipts: "id", audit_request_metadata: "request_id", business_deletion_jobs: "id", business_deletion_locks: "scope_id", business_deletion_objects: "id", business_deletion_operations: "id", business_deletion_records: "id", direct_upload_sessions: "id",
-  deseret_project_links: "id", deseret_inbox: "id", deseret_outbox: "sequence", deseret_material_tasks: "id", deseret_handoff_history: "id" };
+  deseret_project_links: "id", deseret_inbox: "id", deseret_outbox: "sequence", deseret_material_tasks: "id", deseret_handoff_history: "id",
+  deseret_production_archives: "id", deseret_archive_files: "id", deseret_package_sources: "id", deseret_task_handovers: "id" };
 // Any integration history blocks this legacy cleaner, including completed jobs.
 // It has no authority to erase replay receipts or detach cross-platform records.
 const maintenanceIdle = `NOT EXISTS(SELECT 1 FROM deseret_project_links)
@@ -35,6 +37,10 @@ const maintenanceIdle = `NOT EXISTS(SELECT 1 FROM deseret_project_links)
   AND NOT EXISTS(SELECT 1 FROM deseret_outbox)
   AND NOT EXISTS(SELECT 1 FROM deseret_material_tasks)
   AND NOT EXISTS(SELECT 1 FROM deseret_handoff_history)
+  AND NOT EXISTS(SELECT 1 FROM deseret_production_archives)
+  AND NOT EXISTS(SELECT 1 FROM deseret_archive_files)
+  AND NOT EXISTS(SELECT 1 FROM deseret_package_sources)
+  AND NOT EXISTS(SELECT 1 FROM deseret_task_handovers)
   AND NOT EXISTS(SELECT 1 FROM business_deletion_jobs WHERE state NOT IN ('complete','rejected'))
   AND NOT EXISTS(SELECT 1 FROM business_deletion_operations)
   AND NOT EXISTS(SELECT 1 FROM direct_upload_sessions WHERE claim_id IS NOT NULL OR (state <> 'ready' AND (state NOT IN ('cancelled','expired') OR cleaned_at IS NULL)))`;

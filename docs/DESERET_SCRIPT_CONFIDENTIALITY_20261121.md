@@ -34,6 +34,7 @@
   - 本来不含这两个键的事件原样发送。
   - 库中已存的记录不改写。
 - **内部资料**：AIGC 的分镜、审阅包脚本、发件历史和收件记录都照常保留，不清理任何历史。
+- **后续调整**：分镜已不再填写脚本，只需视频和时长即可送审；历史脚本仍保留在 AIGC 内部，见[Deseret 分镜不再填写脚本](DESERET_SCENE_WITHOUT_SCRIPT_20261121.md)。
 
 ## 重投的幂等，以及 Deseret 已收到旧事件但确认丢失的情况
 
@@ -86,7 +87,7 @@ Deseret 按"事件 ID + 原始正文的 SHA-256"保存回执。
 
 ## English summary
 
-Production scripts stay inside AIGC. No `review.published` sent to Deseret carries a `narration` or `script` key. This applies to new publications and to events queued by earlier versions, in both `payload.package.scenes` and the older `payload.scenes`. Every resend is covered: after failure or lease expiry, and the lead's outbox retry. All other fields are sent unchanged. Stored outbox rows and AIGC's production state keep their content.
+Production scripts stay inside AIGC, and scenes are now submitted without one (see [Deseret scenes without scripts](DESERET_SCENE_WITHOUT_SCRIPT_20261121.md)). No `review.published` sent to Deseret carries a `narration` or `script` key. This applies to new publications and to events queued by earlier versions, in both `payload.package.scenes` and the older `payload.scenes`. Every resend is covered: after failure or lease expiry, and the lead's outbox retry. All other fields are sent unchanged. Stored outbox rows and AIGC's production state keep their content.
 
 A resend of a stripped legacy event can be answered with HTTP 409 and exactly `request_reused`. Only then does AIGC query Deseret's signed receipt endpoint. The query carries the Deseret project ID from the original event, as both sides have confirmed, and the SHA-256 of the original wire body. AIGC marks the event delivered only on a matching receipt. Any other answer remains a failure.
 

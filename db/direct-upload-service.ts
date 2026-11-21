@@ -72,7 +72,7 @@ export function sessionAssets(row:Pick<Session,'id'|'assets_json'>,input:DirectU
     return asset;
   });
 }
-export function createDirectUploadService(deps:{db:Database;bucket:WasabiBucket;dispatch:Dispatch;scopes:(input:DirectUploadInput)=>Promise<string[]>;previewAuthority?:(actor:string,input:DirectUploadInput)=>Promise<Guard|null>;authorizeList?:(actor:string,taskId:string)=>Promise<void>;beforeCreate?:(actor:string,input:DirectUploadInput)=>Promise<void>;observe?:(metric:DirectUploadMetric)=>void}) {
+export function createDirectUploadService(deps:{db:Database;bucket:WasabiBucket;dispatch:Dispatch;scopes:(input:DirectUploadInput)=>Promise<string[]>;previewAuthority?:(actor:string,input:DirectUploadInput)=>Promise<Guard|null>;authorizeList?:(actor:string,taskId:string,purpose:string)=>Promise<void>;beforeCreate?:(actor:string,input:DirectUploadInput)=>Promise<void>;observe?:(metric:DirectUploadMetric)=>void}) {
   const {db,bucket}=deps;
   async function storageControl<T>(id:string,phase:'sign'|'status',operation:()=>Promise<T>):Promise<T>{
     try{return await operation();}catch(error){
@@ -96,9 +96,10 @@ export function createDirectUploadService(deps:{db:Database;bucket:WasabiBucket;
   }
   const dto=(row:Session)=>({id:row.id,state:row.state,busy:uploadClaimActive(row),interrupted:uploadClaimInterrupted(row),partSize:directPartSize,...(row.state==='ready'&&row.result_json?{result:JSON.parse(row.result_json)}:{})});
   async function list(actor:string,taskId:string,purpose:string,category='') {
-    if(!taskId||taskId.length>100||!['materials','daily','checkpoint','final'].includes(purpose)||category.length>64||category&&!/^[a-z0-9._-]+$/.test(category))throw new PublicError('Invalid upload selection.');
+    if(!taskId||taskId.length>100||!['materials','daily','checkpoint','final','archive'].includes(purpose)||category.length>64||category&&!/^[a-z0-9._-]+$/.test(category))throw new PublicError('Invalid upload selection.');
     if(!deps.authorizeList)throw new PublicError('Upload recovery is unavailable.',403);
-    await deps.authorizeList(actor,taskId);
+    // Authorised for the purpose being listed (a Deseret archive stays open through review); only that purpose is returned.
+    await deps.authorizeList(actor,taskId,purpose);
     const rows=(await db.prepare("SELECT * FROM direct_upload_sessions WHERE actor_email=? AND cleaned_at IS NULL AND state IN ('created','uploading','verifying','cancelled','expired') AND json_extract(payload_json,'$.endpoint')='/api/production-workspace' AND json_extract(payload_json,'$.fields.task')=? AND json_extract(payload_json,'$.fields.purpose')=?"+(category?" AND json_extract(payload_json,'$.fields.category')=?":"")+" ORDER BY created_at,id LIMIT 201").bind(actor,taskId,purpose,...(category?[category]:[])).all<Session>()).results;
     if(rows.length>200)throw new PublicError('Too many unfinished uploads. Ask an operator to review them.',409);
     const uploads:RecoverableDirectUpload[]=[];

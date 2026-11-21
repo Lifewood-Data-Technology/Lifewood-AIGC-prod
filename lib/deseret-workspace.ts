@@ -6,12 +6,49 @@ export type DeseretScene = {
   order: number;
   version: number;
   duration: number;
-  script: string;
+  /**
+   * Internal production script, optional. Scenes are submitted with a video and a duration only, so new scenes
+   * carry none. A historical script stays in AIGC's state and is never sent to Deseret.
+   */
+  script?: string;
   characterIds: string[];
   voiceId: string;
   fileVersionId: string;
   languageTaskId: string;
 };
+export const SCENE_SCRIPT_MAX_LENGTH = 20000;
+
+/**
+ * Reads the optional script an older client or a replayed request may still send. Absent or blank means none;
+ * anything else must be a string of at most 20000 characters and is returned byte for byte (callers that
+ * historically trimmed keep doing so). Returns `false` for a malformed value.
+ */
+export function optionalSceneScript(value: unknown): string | undefined | false {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string" || value.length > SCENE_SCRIPT_MAX_LENGTH) return false;
+  return value.trim() ? value : undefined;
+}
+
+/**
+ * The stored scene for a submission. An omitted or blank script keeps the previous version's script (or none).
+ * A script an older client sends explicitly is kept as before: if it differs from the stored text the scene gets
+ * a new version, exactly as any other change; an identical resend keeps the version. Without any script the
+ * scene has no script key.
+ */
+export function nextSceneVersion(scene: Omit<DeseretScene, "script" | "version">, previous: DeseretScene | undefined, script: string | undefined): DeseretScene {
+  const kept = script ?? previous?.script;
+  const content = (item: Omit<DeseretScene, "version">) =>
+    JSON.stringify([item.id, item.order, item.duration, item.script ?? null, item.characterIds, item.voiceId, item.fileVersionId, item.languageTaskId]);
+  const next = { ...scene, ...(kept === undefined ? {} : { script: kept }) };
+  const version = !previous ? 1 : content(previous) === content(next) ? previous.version : previous.version + 1;
+  return { ...next, version };
+}
+
+/** The internal script of an assembled final: the stored, non-blank scene scripts joined as stored, or none. */
+export function joinedSceneScript(scenes: DeseretScene[]) {
+  const scripts = scenes.map(scene => scene.script).filter((script): script is string => typeof script === "string" && Boolean(script.trim()));
+  return scripts.length ? { script: scripts.join("\n\n") } : {};
+}
 export type DeseretPublishedFile = HandoffMaterial & { fileVersionId: string; languageTaskId: string };
 export type DeseretReviewPackage = {
   id: string;
@@ -97,7 +134,15 @@ export type DeseretWorkspace = DeseretIntegrationState & {
   materialManifest: (HandoffMaterial & { state: string; nativeVersionId?: string })[];
   tasks: { id: string; videoId: string; language: string; languageCode: string; status: string; editorEmail?: string; reviewerEmail?: string }[];
   fileCandidates: DeseretFileCandidate[];
-  actions: ("intake.accept" | "intake.requestSupplement" | "scene.save" | "package.publish" | "package.withdraw" | "revision.assign" | "materials.retry" | "outbox.retry")[];
+  actions: ("intake.accept" | "intake.requestSupplement" | "scene.save" | "package.publish" | "package.withdraw" | "revision.assign" | "materials.retry" | "outbox.retry" | "archive.register" | "handover.verify")[];
+  /** Internal only (never sent to Deseret): production archives of the tasks this account may continue. QC: none. */
+  archives?: DeseretArchive[];
+  /** Internal only: live formal versions this account may archive, by task. */
+  archiveCandidates?: DeseretArchiveCandidate[];
+  /** Internal only: Deseret editor handovers with the incoming editor's verification. */
+  handovers?: DeseretTaskHandover[];
+  /** Internal only, lead: the archive pinned to each published scene. */
+  packageSources?: DeseretPackageSource[];
   transfers: { id: string; direction: string; packageId?: string; name: string; state: string; attempts: number; lastError?: string }[];
   outbox: { id: string; type: string; state: string; attempts: number; lastError?: string }[];
 };
@@ -133,3 +178,21 @@ export function isStoryboardFileVersion(state: Pick<DeseretIntegrationState, "sc
   return state.scenes.some(scene => scene.fileVersionId === id) ||
     state.packages.some(pack => pack.phase === "storyboard" && pack.files.some(file => file.fileVersionId === id));
 }
+
+/** One file version referenced by an internal production archive; `live` is recomputed whenever it is read. */
+export type DeseretArchiveFile = { id: string; name: string; version: number; mimeType: string; live: boolean };
+/**
+ * Internal production archive of one language task: the engineering file version to continue from, an optional
+ * preview, materials and next steps. Immutable and numbered per task. Stored only in AIGC; never sent to Deseret.
+ */
+export type DeseretArchive = {
+  id: string; number: number; taskId: string; createdBy: string; createdAt: string;
+  projectVersion: DeseretArchiveFile; preview?: DeseretArchiveFile; materials: DeseretArchiveFile[];
+  nextSteps: string; valid: boolean; missing: string[];
+};
+export type DeseretArchiveCandidate = { id: string; name: string; version: number; taskId: string; kind: "project" | "video" | "material" };
+export type DeseretTaskHandover = {
+  id: string; taskId: string; kind: "planned" | "emergency" | "batch"; from: string; to: string; archiveId?: string;
+  verification: "pending" | "verified" | "missing"; notes: string; verifiedAt?: string; createdAt: string;
+};
+export type DeseretPackageSource = { packageId: string; sceneId: string; sceneVersion: number; taskId: string; videoVersionId: string; archiveId: string; archiveNumber: number };
