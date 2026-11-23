@@ -1,3 +1,4 @@
+import { preparePublisherRead } from "./deseret-publisher-read.ts";
 import { randomUUID } from "node:crypto";
 import {
   S3Client, HeadObjectCommand, CreateMultipartUploadCommand, CompleteMultipartUploadCommand,
@@ -102,6 +103,7 @@ export function createRelayTransport(config: MaterialTransferConfig, input: Mate
     if (bucket === config.deseret.bucket) return false;
     throw Error("Unconfigured transfer bucket.");
   };
+  let publisherRead: Awaited<ReturnType<typeof preparePublisherRead>> | undefined;
   const uploadPart: MaterialTransferTransport["copyPart"] = async (value, signal) => {
     const match = /^bytes=(\d+)-(\d+)$/.exec(value.CopySourceRange || "");
     if (!match) throw Error("Invalid relay range.");
@@ -115,11 +117,13 @@ export function createRelayTransport(config: MaterialTransferConfig, input: Mate
       return rpc({ ...job, source, key: plan.source.objectKey, peerKey: plan.target.objectKey, versionId, url }, signal);
     }
     if (isOwn(value.Bucket) || value.Key !== plan.target.objectKey) throw Error("Relay target mismatch.");
-    const url = await getSignedUrl(client, new GetObjectCommand({ Bucket: config.aigc.bucket, Key: plan.source.objectKey, VersionId: versionId, Range: value.CopySourceRange, IfMatch: value.CopySourceIfMatch }),
+    if (!publisherRead) throw Error("Publisher review source has not been prepared.");
+    const url = await getSignedUrl(client, new GetObjectCommand({ Bucket: config.aigc.bucket, Key: publisherRead.key, VersionId: publisherRead.versionId, Range: value.CopySourceRange, IfMatch: publisherRead.etag }),
       { expiresIn: 180, signableHeaders: new Set(["range", "if-match"]) });
-    return rpc({ ...job, key: plan.target.objectKey, peerKey: plan.source.objectKey, url }, signal);
+    return rpc({ ...job, etag: publisherRead.etag, key: plan.target.objectKey, peerKey: publisherRead.key, url }, signal);
   };
   return {
+    preparePublisherSource: async (etag, versionId, signal) => { publisherRead = await preparePublisherRead(client, config, input, plan, versionId, etag, signal); },
     dispose: () => client.destroy(),
     head: (v, s) => isOwn(v.Bucket) ? client.send(new HeadObjectCommand(v), { abortSignal: s }) : rpc({ op: "head", key: v.Key, direction: input.direction, source, versionId: v.VersionId }, s),
     begin: (v, s) => isOwn(v.Bucket) ? client.send(new CreateMultipartUploadCommand(v), { abortSignal: s }) : rpc({ op: "begin", key: v.Key, mimeType: v.ContentType, metadata: v.Metadata }, s),

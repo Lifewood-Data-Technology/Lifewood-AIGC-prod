@@ -213,7 +213,10 @@ export function createDeseretIntegrationJobs(deps: DeseretJobDependencies) {
         const started = clock();
         let operation: JobOperation = "read_source";
         try {
-          const link = await db.prepare("SELECT * FROM deseret_project_links WHERE id=? AND source_revision=?").bind(task.project_id, task.source_revision).first<Row>();
+          const linkQuery = task.direction === "aigc_to_deseret"
+            ? "SELECT link.*,p.client_id AS publisher_client_id FROM deseret_project_links link JOIN projects p ON p.id=link.id WHERE link.id=? AND link.source_revision=?"
+            : "SELECT * FROM deseret_project_links WHERE id=? AND source_revision=?";
+          const link = await db.prepare(linkQuery).bind(task.project_id, task.source_revision).first<Row>();
           if (!link) return;
           const snapshot = JSON.parse(String(link.snapshot_json)) as Row;
           const source = JSON.parse(String(task.manifest_json)) as HandoffMaterial;
@@ -223,6 +226,7 @@ export function createDeseretIntegrationJobs(deps: DeseretJobDependencies) {
             direction: task.direction as MaterialTransferInput["direction"],
             signal: AbortSignal.any([jobSignal, AbortSignal.timeout(budget.timeoutMs)]),
             ...(task.direction === "aigc_to_deseret" ? {
+              publisherClientId: typeof link.publisher_client_id === "string" ? link.publisher_client_id : undefined,
               sourceReceipt: await deps.sourceReceipt(String(task.project_id), source),
               targetStorageProfileId: typeof snapshot.targetStorageProfileId === "string" ? snapshot.targetStorageProfileId : undefined,
               reviewObjectPrefix: typeof snapshot.reviewObjectPrefix === "string" ? snapshot.reviewObjectPrefix : undefined,
@@ -245,14 +249,29 @@ export function createDeseretIntegrationJobs(deps: DeseretJobDependencies) {
           transferInput.multipartUploadId = handle;
           // The source identity (ETag/version) pinned when this upload was created; relay parts are reused only under it.
           transferInput.sourcePin = handle && previousTarget.sourcePin && typeof previousTarget.sourcePin === "object" ? previousTarget.sourcePin : undefined;
-          transferInput.onMultipartCreated = async (uploadId, sourcePin) => {
+          const updateInventory = async (change: (inventory: Row) => Row) => {
             const current = await db.prepare("SELECT target_json FROM deseret_material_tasks WHERE id=? AND lease_id=? AND state='running'").bind(task.id, lease).first<{ target_json: string }>();
             if (!current) throw Object.assign(new Error("Transfer lease changed."), { code: "STALE_RECORD" });
             const inventory = JSON.parse(current.target_json) as Row;
             const saved = await db.prepare("UPDATE deseret_material_tasks SET target_json=?,updated_at=? WHERE id=? AND lease_id=? AND state='running' AND EXISTS(SELECT 1 FROM deseret_project_links link WHERE link.id=deseret_material_tasks.project_id AND link.source_revision=deseret_material_tasks.source_revision AND json_extract(link.state_json,'$.intake')<>'needsSupplement')")
-              .bind(JSON.stringify({ ...inventory, peerUploadId: uploadId, sourcePin }), iso(), task.id, lease).run();
+              .bind(JSON.stringify(change(inventory)), iso(), task.id, lease).run();
             if (Number(saved.meta.changes) !== 1) throw Object.assign(new Error("Transfer source changed."), { code: "STALE_RECORD" });
           };
+          transferInput.onMultipartCreated = (peerUploadId, sourcePin) => updateInventory(inventory => ({ ...inventory, peerUploadId, sourcePin }));
+          if (task.direction === "aigc_to_deseret") {
+            transferInput.onPublisherSnapshot = ({ key, owner, uploadId }) => updateInventory(inventory => {
+              const { bucket, endpoint, prefix, region } = plan.source;
+              const entry = { key, owner, bucket, endpoint, prefix, region, ...(uploadId ? { uploadId } : {}) };
+              const previous = inventory.publisherSnapshots ?? [];
+              if (!Array.isArray(previous)) throw jobError("Invalid publisher snapshot inventory.", "TRANSFER_DESTINATION_CONFLICT");
+              // A completion callback can follow an interrupted attempt with another upload ID.
+              // Keep all known handles; aborting an already-completed ID is idempotent.
+              const duplicate = previous.some(item => item.key === key && item.owner === owner &&
+                item.bucket === bucket && item.endpoint === endpoint && item.prefix === prefix &&
+                item.region === region && item.uploadId === uploadId);
+              return duplicate ? inventory : { ...inventory, publisherSnapshots: [...previous, entry] };
+            });
+          }
           operation = "transfer_file";
           const copied = await deps.transferFile(transferInput, plan);
           const currentTarget = await db.prepare("SELECT target_json FROM deseret_material_tasks WHERE id=? AND lease_id=? AND state='running'").bind(task.id, lease).first<{ target_json: string }>();

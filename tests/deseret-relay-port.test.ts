@@ -10,9 +10,11 @@ import {
   createDeseretMaterialTransfer, deseretStorageProfileId, materialTransferBudget, readMaterialTransferConfig,
   type MaterialTransferConfig, type MaterialTransferInput, type MaterialTransferPlan, type MaterialTransferTransport,
 } from "../runtime/deseret-material-transfer";
+import { preparePublisherRead } from "../runtime/deseret-publisher-read";
+import { S3Client } from "@aws-sdk/client-s3";
 import { createRelayRpc, createRelayTransport, readRelaySettings } from "../runtime/deseret-relay-transport";
 import { RESPONSE_SIGNATURE_HEADER, signRpcResponse } from "../services/deseret-transfer-worker/protocol.mjs";
-import { createWorker } from "../services/deseret-transfer-worker/worker.mjs";
+import { createWorker, validateSignedUrl } from "../services/deseret-transfer-worker/worker.mjs";
 import { concludedEnvelope, createHarness, finalReviewState, guidanceImage, LEAD, OTHER_PROJECT, PROJECT, SOURCE, type Harness, type Row } from "./support/deseret-harness";
 
 const PART = 8 * 1024 ** 2;
@@ -56,6 +58,7 @@ function fakeStorage(options: { sourceEtag?: string; versionId?: string; retaine
 describe("relay transfer runtime: interrupted multipart and plans", () => {
   it("resumes an interrupted upload under its pinned source and sends only the missing part", async () => {
     const store = fakeStorage({ sourceEtag: "pinned", versionId: "v1", retained: [{ PartNumber: 1, Size: PART, ETag: '"kept"' }] });
+    store.transport.preparePublisherSource = async () => assert.fail("Inbound transfers must not stage publisher output");
     const service = createDeseretMaterialTransfer(relayConfig, store.transport);
     const plan = service.planTransfer(incoming());
     store.setMetadata({ "lifewood-integrity-algorithm": "sha256", "lifewood-integrity-value": digest, "lifewood-transfer": plan.receiptId });
@@ -418,3 +421,112 @@ function editState(change: (state: DeseretIntegrationState) => void) {
   change(state);
   h.db.sqlite.prepare("UPDATE deseret_project_links SET state_json=? WHERE id=?").run(JSON.stringify(state), PROJECT);
 }
+function publisherSnapshotFixture(objectKey: string) {
+  const notes: {key:string; owner:string; uploadId?:string}[] = [];
+  const calls: string[] = [];
+  const source = incoming();
+  const input: MaterialTransferInput = {
+    ...source, direction: "aigc_to_deseret", publisherClientId: "client-1",
+    file: {...source.file, objectKey},
+    sourceReceipt: {size: source.file.size, etag: "original", integrity: {algorithm: "sha256", value: digest}},
+    onPublisherSnapshot: async entry => {
+      calls.push(entry.uploadId ? "record-upload" : "record-key");
+      notes.push(entry);
+    },
+  };
+  const plan = {id: "stable-plan", source: {objectKey: "owned/" + objectKey}} as MaterialTransferPlan;
+  let metadata: Record<string,string> | undefined;
+  let completed = false;
+  const client = {async send(cmd: {constructor: {name:string}; input: {Key:string; Metadata?:Record<string,string>; CopySource?:string; CopySourceIfMatch?:string; IfNoneMatch?:string}}) {
+    const value = cmd.input;
+    assert.match(value.Key, /^owned\/clients\/client-1\/projects\/project-1\/publisher-review\/[a-f0-9]{64}$/);
+    calls.push(cmd.constructor.name);
+    switch (cmd.constructor.name) {
+      case "HeadObjectCommand":
+        if (!completed) throw missing();
+        return {Metadata:metadata, ETag:"copy", ContentLength:input.file.size, VersionId:"snapshot-v1"};
+      case "CreateMultipartUploadCommand": metadata = value.Metadata; return {UploadId:"upload"};
+      case "UploadPartCopyCommand":
+        assert.equal(value.CopySource, "aigc-sg-test/owned/" + objectKey.split("/").map(encodeURIComponent).join("/") + "?versionId=a%2Fb");
+        assert.equal(value.CopySourceIfMatch,'"original"');
+        return {CopyPartResult:{ETag:"part"}};
+      case "CompleteMultipartUploadCommand": assert.equal(value.IfNoneMatch,"*"); completed = true; return {};
+      case "AbortMultipartUploadCommand": return {};
+      default: throw Error(cmd.constructor.name);
+    }
+  }} as unknown as S3Client;
+  return {input, plan, client, calls, notes, read: () => preparePublisherRead(client, relayConfig, input, plan, "a/b", "original", new AbortController().signal)};
+}
+
+describe("publisher source snapshots", () => {
+  for (const key of ["production-staging/file-1", "clients/other/projects/another/video.mp4", "日语/分镜 A.mp4"]) {
+    it("pins and inventories the project-owned native file at " + key, async () => {
+      const f = publisherSnapshotFixture(key);
+      const saved = await f.read();
+      assert.deepEqual(saved, await f.read());
+      assert.equal(saved.etag, '"copy"');
+      assert.equal(saved.versionId, "snapshot-v1");
+      assert.equal(saved.key, "owned/" + f.notes[0].key);
+      assert.equal(f.notes[0].key, "clients/client-1/projects/project-1/publisher-review/" + f.notes[0].owner);
+      assert.deepEqual(f.calls, ["record-key", "HeadObjectCommand", "CreateMultipartUploadCommand", "record-upload",
+        "UploadPartCopyCommand", "CompleteMultipartUploadCommand", "HeadObjectCommand", "record-key", "record-key", "HeadObjectCommand"]);
+    });
+  }
+  it("keeps direct project-scoped sources out of the copy inventory and quotes source ETags", async () => {
+    const key = "clients/client-1/projects/project-1/existing.mp4";
+    const f = publisherSnapshotFixture(key);
+    assert.deepEqual(await f.read(), {key:"owned/" + key, versionId:"a/b", etag:'"original"'});
+    assert.deepEqual(f.calls, []);
+  });
+  it("fails closed without a matching native receipt or durable inventory registration", async () => {
+    const f = publisherSnapshotFixture("clients/other/projects/another/video.mp4");
+    const receipt = f.input.sourceReceipt!;
+    f.input.sourceReceipt = undefined;
+    await assert.rejects(f.read(), /Unverified/);
+    f.input.sourceReceipt = {...receipt, integrity:{...receipt.integrity, value:"0".repeat(64)}};
+    await assert.rejects(f.read(), /Unverified/);
+    f.input.sourceReceipt = receipt;
+    f.input.onPublisherSnapshot = undefined;
+    await assert.rejects(f.read(), /inventory/);
+    f.input.onPublisherSnapshot = async () => { throw Error("lost lease"); };
+    await assert.rejects(f.read(), /lost lease/);
+    assert.deepEqual(f.calls, []);
+  });
+  it("aborts its own multipart upload when recording the handle fails", async () => {
+    const f = publisherSnapshotFixture("production-staging/file-1");
+    f.input.onPublisherSnapshot = async entry => { if (entry.uploadId) throw Error("lost lease"); };
+    await assert.rejects(f.read(), /lost lease/);
+    assert.deepEqual(f.calls, ["HeadObjectCommand","CreateMultipartUploadCommand","AbortMultipartUploadCommand"]);
+  });
+});
+it("signs a resumed outgoing part for the pinned snapshot under the worker's project read policy", async t => {
+  const f = publisherSnapshotFixture("production-staging/file-1");
+  t.mock.method(S3Client.prototype, "send", f.client.send);
+  const settings = {origin:"https://relay.invalid", ...control, allowLoopbackHttp:false};
+  const plan = {...f.plan, target:{...f.plan.target, objectKey:"aigc-review/publisher-1/video"}};
+  let parts = 0;
+  const transport = createRelayTransport(relayConfig, f.input, plan, settings, async job => {
+    assert.equal(job.op, "part");
+    assert.equal(job.uploadId, "old-v1-upload");
+    assert.equal(job.partNumber, 2);
+    assert.equal(job.etag, '"copy"');
+    assert.equal(job.start, PART);
+    assert.equal(job.end, PART + 12);
+    const config = {aigcReadPrefixes:["owned/clients/client-1/projects/project-1/"],
+      aigcEndpoint: relayConfig.aigc.endpoint, aigcBucket: relayConfig.aigc.bucket};
+    const signed = new URL(validateSignedUrl(job.url, config, job.peerKey, "GET"));
+    assert.equal(signed.searchParams.get("versionId"), "snapshot-v1");
+    assert.match(signed.pathname, /publisher-review\/[a-f0-9]{64}$/);
+    assert.equal(signed.pathname.includes("production-staging"), false);
+    parts++;
+    return {CopyPartResult: {ETag:'"done"'}};
+  });
+  try {
+    const signal = AbortSignal.timeout(5000);
+    await transport.preparePublisherSource!('"original"', "a/b", signal);
+    await transport.copyPart({Bucket:us.bucket, Key:plan.target.objectKey, UploadId:"old-v1-upload", PartNumber:2,
+      CopySource:"aigc-sg-test/owned/production-staging/file-1?versionId=a%2Fb", CopySourceIfMatch:'"original"',
+      CopySourceRange:"bytes=" + PART + "-" + (PART + 12)}, signal);
+    assert.equal(parts, 1);
+  } finally {transport.dispose?.();}
+});

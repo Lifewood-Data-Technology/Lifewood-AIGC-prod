@@ -28,6 +28,7 @@ export type MaterialSourceReceipt = {
 };
 export type MaterialTransferInput = {
   projectId: string; sourceRevision: string; file: HandoffMaterial;
+  publisherClientId?: string;
   deseretProjectId?: string;
   direction: "deseret_to_aigc" | "aigc_to_deseret";
   signal?: AbortSignal;
@@ -38,6 +39,7 @@ export type MaterialTransferInput = {
   reviewObjectPrefix?: string;
   multipartUploadId?: string;
   sourcePin?: {etag: string; versionId?: string};
+  onPublisherSnapshot?: (snapshot: {key: string; owner: string; uploadId?: string}) => Promise<void>;
   onMultipartCreated?: (uploadId: string, sourcePin?: {etag: string; versionId?: string}) => Promise<void>;
 };
 export type MaterialTransferLocation = {
@@ -53,6 +55,7 @@ export type MaterialTransferPlan = {
   target: MaterialTransferLocation;
 };
 export interface MaterialTransferTransport {
+  preparePublisherSource?(etag: string, versionId: string | undefined, signal: AbortSignal): Promise<void>;
   dispose?(): void;
   head(input: HeadObjectCommandInput, signal: AbortSignal): Promise<HeadObjectCommandOutput>;
   begin(input: CreateMultipartUploadCommandInput, signal: AbortSignal): Promise<CreateMultipartUploadCommandOutput>;
@@ -265,6 +268,7 @@ export function createDeseretMaterialTransfer(config = readMaterialTransferConfi
           throw new TransferUnavailableError("TRANSFER_SOURCE_CHANGED", "Persisted source identity changed; reconcile the upload before retry.");
         }
       }
+      if (input.direction === "aigc_to_deseret") await transport.preparePublisherSource?.(sourceHead.ETag!, sourceHead.VersionId, within(materialTransferBudget(file.size, config.strategy).timeoutMs));
       const copySource = `${source.bucket}/${sourceKey.split("/").map(encodeURIComponent).join("/")}${sourceHead.VersionId ? `?versionId=${encodeURIComponent(sourceHead.VersionId)}` : ""}`;
       let uploadId = input.multipartUploadId;
       if (uploadId && (uploadId.length > 4096 || Array.from(uploadId).some((character) => character.charCodeAt(0) <= 32))) throw Error("Invalid persisted multipart identity.");

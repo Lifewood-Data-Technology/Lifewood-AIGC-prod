@@ -24,3 +24,13 @@ Applies to US Deseret and Singapore AIGC buckets, including separate Wasabi acco
 如果只轮换访问密钥并保留同一个桶，更新实际访问该桶的 Deseret 应用与 worker，按各自权限验证读写。AIGC 继续使用自己的密钥。For a credential rotation on the same bucket, update each Deseret-side consumer that uses the rotated credential and verify the existing object references.
 
 如果同时更换桶，先用新桶验证一笔新交接，再处理历史项目。已批准清单引用原存储配置、对象键及文件版本，换账户不会自动迁移 Space Bros 的封面。跨桶迁移需单独安排，在旧项目验收前保留原对象和读取它们所需的配置。For a new bucket, update the Deseret uploader, relay, and AIGC peer storage profile together. Validate the old project against its original profile before retiring the old bucket or keys.
+
+## 审阅包回传 / Publisher review delivery
+
+在美区 worker 的 `DESERET_RELAY_AIGC_READ_PREFIXES` 中填写 JSON 数组。每个元素使用实际的 `<WASABI_PREFIX>clients/<AIGC 客户 ID>/projects/`，包括末尾的斜杠。确认覆盖对应客户后，移除共享暂存区的读取授权。保留入站上传所用的写入前缀。新加坡 AIGC 的存储身份需要有权读取已发布文件的源版本，并在本客户的项目目录创建、完成和中止分片上传。
+
+Set the US worker's `DESERET_RELAY_AIGC_READ_PREFIXES` to a JSON array of actual `<WASABI_PREFIX>clients/<AIGC client ID>/projects/` prefixes, including the trailing slash. After confirming coverage, remove any shared staging read prefix. Retain the write prefixes used for intake. The AIGC storage identity needs versioned source reads and multipart create, complete and abort access under the project's prefix.
+
+项目目录内的原件可以直接送审。对于暂存、跨项目复用或使用可读路径的文件，AIGC 核实当前项目的文件版本后，在自己的桶中建立审阅副本。副本占用 AIGC 桶空间；项目或客户永久删除时，按归属清理副本和已登记的未完成上传。美区 worker 用短期签名地址读取指定字节范围。重试沿用原来的审阅包和文件版本。
+
+Project-scoped files can be served directly. For staged, deduplicated or readable-path sources, AIGC verifies the native project file and prepares a snapshot in its own bucket. Snapshots consume AIGC storage. Project or customer deletion cleans owned snapshots and recorded unfinished uploads. The US worker reads a signed byte range. Retrying keeps the original review package and file version.

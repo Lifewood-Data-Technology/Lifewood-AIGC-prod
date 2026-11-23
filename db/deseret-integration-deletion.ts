@@ -24,12 +24,29 @@ function location(value: Record<string, unknown>): IntegrationDeletionLocation {
 export function integrationDeletionInventory(tasks: readonly TaskRow[]) {
   const objects: OwnedObject[] = [], uploads: OwnedUpload[] = [];
   for (const task of tasks) {
-    if (task.direction === "aigc_to_deseret") continue;
-    if (task.direction !== "deseret_to_aigc") invalid();
+    if (task.direction !== "aigc_to_deseret" && task.direction !== "deseret_to_aigc") invalid();
     if (!task.target_json) continue;
     let target: unknown;
     try { target = JSON.parse(String(task.target_json)); } catch { return invalid(); }
     if (!object(target)) invalid();
+    if (task.direction === "aigc_to_deseret") {
+      if (target.publisherSnapshots === undefined) continue;
+      if (!Array.isArray(target.publisherSnapshots)) invalid();
+      for (const snapshot of target.publisherSnapshots) {
+        if (!object(snapshot) || typeof snapshot.owner !== "string" || !/^[a-f0-9]{64}$/.test(snapshot.owner)) invalid();
+        const relative = key(snapshot.key);
+        const parts = relative.split("/");
+        if (parts.length !== 6 || parts[0] !== "clients" || !/^[A-Za-z0-9_-]{1,120}$/.test(parts[1]) ||
+            parts[2] !== "projects" || parts[3] !== task.project_id || parts[4] !== "publisher-review" || parts[5] !== snapshot.owner) invalid();
+        const entry = { key: relative, location: location(snapshot), metadataKey: "publisher-source", owner: snapshot.owner };
+        objects.push(entry);
+        if (snapshot.uploadId !== undefined) {
+          if (typeof snapshot.uploadId !== "string" || !snapshot.uploadId || snapshot.uploadId.length > 4096) invalid();
+          uploads.push({ ...entry, uploadId: snapshot.uploadId });
+        }
+      }
+      continue;
+    }
     if (target.plan !== undefined) {
       if (!object(target.plan) || !object(target.plan.file) || !object(target.plan.target)) invalid();
       const file = target.plan.file, stored = target.plan.target;

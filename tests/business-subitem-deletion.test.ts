@@ -495,3 +495,37 @@ it("previews the exact storage blocker and refuses to start until storage matche
     assert.equal(db.count("business_deletion_jobs"), 0);
   }
 });
+
+describe("permanent deletion of publisher snapshot copies", () => {
+  beforeEach(business);
+  for (const kind of ["project", "customer"] as const) {
+    it(`deletes only the registered publisher snapshot and its multipart handles under a ${kind}`, async () => {
+      const owner = "a".repeat(64);
+      const key = `clients/c1/projects/p1/publisher-review/${owner}`;
+      const snapshot = { key, owner, bucket:"aigc", region:"sg", prefix:"sg/", endpoint:"https://sg.example.test" };
+      const aborted: string[] = [], asserted: string[] = [];
+      service = createBusinessDeletionService({
+        db, now: () => NOW,
+        storage: {
+          async assertReady() {}, async purge(relative) { purged.push(relative); },
+          async assertOwned(relative, claims) {
+            assert.deepEqual(claims.map(({metadataKey,owner}) => ({metadataKey,owner})), [{ metadataKey:"publisher-source", owner }]);
+            asserted.push(relative);
+          },
+          async abortMultipart(relative, handle) { assert.equal(relative,key); aborted.push(handle); },
+        },
+        async authority(email) { return { actor:{email,accountId:"acc-lead",revision:1,access:"project"}, condition:"1=1", values:[] }; },
+      });
+      db.insert("deseret_material_tasks", {id:"publisher-transfer", project_id:"p1", source_revision:"brief-v1", file_id:"en-eng",file_version:1,
+        manifest_json:"{}", direction:"aigc_to_deseret", state:"ready", attempts:2,created_at:"t",updated_at:"t",next_attempt_at:"t",
+        target_json:JSON.stringify({plan:{source:{objectKey:"shared-source"},target:{objectKey:"publisher-destination"}},
+          peerUploadId:"remote-upload",publisherSnapshots:[snapshot,{...snapshot,uploadId:"local-1"},{...snapshot,uploadId:"local-2"}]})});
+      const {status} = await remove({kind,id:kind==="project" ? "p1" : "c1"});
+      assert.equal(status.state,"complete");
+      assert.deepEqual(asserted,[key]);
+      assert.deepEqual(aborted.sort(),["local-1","local-2"]);
+      assert.ok(purged.includes(key));
+      assert.ok(!purged.includes("shared-source") && !purged.includes("publisher-destination"));
+    });
+  }
+});
