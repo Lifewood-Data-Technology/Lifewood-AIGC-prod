@@ -509,7 +509,11 @@ export function createBusinessDeletionService(deps: {
     targetValid(target); await deps.authority(email, target); await assertBusinessAvailable(db, [scope(target)]);
     const plan = await inventory(target, email);
     let availability: DeletionPreview["availability"] = { enabled: true };
-    try { await storage.assertReady(plan.locations); } catch { availability = { enabled: false, reason: "PERMANENT_DELETION_NOT_VERIFIED" }; }
+    try {
+      await storage.assertReady(plan.locations);
+    } catch (error) {
+      availability = { enabled: false, reason: error instanceof PublicError ? error.code : "PERMANENT_DELETION_NOT_VERIFIED" };
+    }
     return { target, name: plan.name, revision: plan.revision, previewHash: plan.hash, summary: plan.summary, disclosure: plan.disclosure, availability };
   }
   async function start(email: string, request: DeletionRequest) {

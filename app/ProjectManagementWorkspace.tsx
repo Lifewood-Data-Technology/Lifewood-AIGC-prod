@@ -187,8 +187,8 @@ export default function ProjectManagementWorkspace({ platform: data, locale, sel
   const [deleteSubitem, setDeleteSubitem] = useState<{ kind: "video" | "language"; id: string } | null>(null);
   // Saved video/language receipts can be checked even after their rows vanished; completion only refreshes data.
   const subitemRecovery = <>
-    <PendingBusinessDeletionButton kind="video" locale={locale} label={t("核对视频删除","Review video deletions")} onDeleted={()=>onProjectDeleted?.()}/>
-    <PendingBusinessDeletionButton kind="language" locale={locale} label={t("核对语言版本删除","Review language deletions")} onDeleted={()=>onProjectDeleted?.()}/>
+    <PendingBusinessDeletionButton kind="video" locale={locale} label={t("核对上次视频删除","Review previous video deletion")} onDeleted={()=>onProjectDeleted?.()}/>
+    <PendingBusinessDeletionButton kind="language" locale={locale} label={t("核对上次语言版本删除","Review previous language deletion")} onDeleted={()=>onProjectDeleted?.()}/>
   </>;
   const [archivePending, setArchivePending] = useState("");
   const [archiveError, setArchiveError] = useState("");
