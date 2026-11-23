@@ -9,12 +9,14 @@ import {directUploadMaxBytes, requirementUploadMaxBytes, previewUploadMaxBytes} 
 import { directPartLength, directPartSize, type DirectUploadFile, type DirectUploadInput, type RecoverableDirectUpload } from "../lib/direct-upload-contract";
 import { storedUploadFile } from "../runtime/verified-upload";
 import { storedMultipartIntegrity } from "../runtime/direct-upload-integrity";
-import type { WasabiBucket } from "../runtime/wasabi";
+import type { DirectStorageMode, WasabiBucket } from "../runtime/wasabi";
 import { uploadClaimActive, uploadClaimInterrupted } from '../lib/direct-upload-state';
 import type {UploadRecordSummary} from '../lib/upload-recovery';
 
-type Destination = {key:string;confirmed:boolean;copyProtocol?:'multipart-receipt-v1';handle?:string};
-type Asset = DirectUploadFile & { slot: string; key: string; handle: string; etag?: string; parts: Record<string, string>; destinations?:Destination[] };
+// On a versioned bucket every object this session writes is recorded by its exact version ID.
+type Destination = {key:string;confirmed:boolean;copyProtocol?:'multipart-receipt-v1';handle?:string;versionId?:string};
+type Asset = DirectUploadFile & { slot: string; key: string; handle: string; etag?: string; parts: Record<string, string>; destinations?:Destination[]; versioning?:'enabled-v1'; versionId?:string };
+const validVersion=(value:unknown):value is string=>typeof value==='string'&&value.length>0&&value.length<=1024&&value!=='null'&&!value.includes('\0');
 type Session = { id:string; registration_id:string; actor_email:string; request_hash:string; payload_json:string; assets_json:string; authority_json:string; state:string; result_json:string|null; claim_id:string|null; lease_expires_at:string|null; expires_at:string; scopes_json:string; updated_at:string };
 type Guard = {sql:string;values:(string|number|null)[]};
 /** Background completion yields to foreground uploads at safe boundaries; see the finalizer. */
@@ -69,6 +71,9 @@ export function sessionAssets(row:Pick<Session,'id'|'assets_json'>,input:DirectU
     const asset=value[index] as Asset|undefined;
     if(!asset||asset.slot!==info.slot||asset.key!==`direct-upload-temporary/${row.id}/${info.slot}`||asset.name!==info.name||asset.type!==info.type||asset.size!==info.size||asset.sha256!==info.sha256||typeof asset.handle!=='string'||asset.handle.length>2048||!asset.parts||typeof asset.parts!=='object'||Array.isArray(asset.parts)||Object.entries(asset.parts).some(([number,digest])=>!Number.isInteger(Number(number))||Number(number)<1||Number(number)>Math.ceil(info.size/directPartSize)||typeof digest!=='string'||!/^[A-Za-z0-9+/]{43}=$/.test(digest))||asset.etag!==undefined&&typeof asset.etag!=='string'||asset.destinations!==undefined&&(!Array.isArray(asset.destinations)||asset.destinations.length>8||asset.destinations.some(d=>!d||typeof d.key!=='string'||!d.key||d.key.startsWith('/')||d.key.split('/').some(s=>s==='..')||d.key.includes('\0')||typeof d.confirmed!=='boolean')))throw Error('Invalid persisted upload ownership');
     if(asset.destinations?.some(destination=>destination.copyProtocol!==undefined&&destination.copyProtocol!=='multipart-receipt-v1'||destination.handle!==undefined&&(typeof destination.handle!=='string'||!destination.handle||destination.handle.length>2048||destination.copyProtocol!=='multipart-receipt-v1')))throw Error('Invalid persisted copy receipt');
+    const versioned=asset.versioning==='enabled-v1';
+    if(asset.versioning!==undefined&&!versioned||asset.versionId!==undefined&&(!versioned||!validVersion(asset.versionId))||versioned&&asset.etag!==undefined&&asset.versionId===undefined||
+      asset.destinations?.some(destination=>destination.versionId!==undefined&&(!versioned||!validVersion(destination.versionId))||versioned&&destination.confirmed&&destination.versionId===undefined))throw Error('Invalid persisted version receipt');
     return asset;
   });
 }
@@ -77,10 +82,37 @@ export function createDirectUploadService(deps:{db:Database;bucket:WasabiBucket;
   async function storageControl<T>(id:string,phase:'sign'|'status',operation:()=>Promise<T>):Promise<T>{
     try{return await operation();}catch(error){
       const name=error instanceof Error?error.name:'Unknown';
-      const reason=['AbortError','TimeoutError','RequestTimeout','AccessDenied','NoSuchUpload'].includes(name)?name:'UNCLASSIFIED';
+      const reason=error instanceof PublicError && error.code==='DIRECT_STORAGE_VERSIONING' ? error.code : ['AbortError','TimeoutError','RequestTimeout','AccessDenied','NoSuchUpload'].includes(name)?name:'UNCLASSIFIED';
       console.warn({event:'direct-upload.storage-control.unconfirmed',sessionId:id,phase,reason});
       if(['AbortError','TimeoutError','RequestTimeout'].includes(name))throw new PublicError('Wasabi upload setup or status check timed out. The original upload is retained; check it or select the original file to resume.',503,'DIRECT_STORAGE_CONTROL_TIMEOUT');
       throw error;
+    }
+  }
+  const versioningUnavailable=()=>new PublicError('Direct transfer is unavailable with the current storage configuration. Ask an administrator to review it.',503,'DIRECT_STORAGE_VERSIONING');
+  const reconciliationRequired=()=>new PublicError('This upload needs administrator review before it can continue.',409,'UPLOAD_RECONCILIATION_REQUIRED');
+  const statusOf=(error:unknown)=>(error as {$metadata?:{httpStatusCode?:number}}).$metadata?.httpStatusCode;
+  async function storageMode():Promise<DirectStorageMode>{
+    try{return await bucket.directStorageMode();}
+    catch(error){if(error instanceof Error&&['DIRECT_NATIVE_VERSIONING_UNSUPPORTED','DIRECT_STORAGE_MODE_CHANGED'].includes(error.message))throw versioningUnavailable();throw error;}
+  }
+  /** Storage written without version receipts (before versioning, or by an older release) is never resumed or deleted on a
+   * versioned bucket, and a versioned record is never handled as unversioned. Such records wait for administrator review. */
+  function storageModeMatches(assets:Asset[],mode:DirectStorageMode){
+    return assets.every(asset=>mode==='enabled'?!(asset.handle||asset.etag||asset.destinations?.length)||asset.versioning==='enabled-v1':asset.versioning===undefined);
+  }
+  const owns=(head:{uploadOwner?:string;size:number}|null,id:string,size:number)=>Boolean(head&&head.uploadOwner===id&&head.size===size);
+  /** Exact-key lookup, then exact-version deletion of only what this session wrote (owner metadata and size, plus the
+   * recorded ETag for its temporary file). Foreign versions and delete markers are left untouched; no prefix purge. */
+  async function deleteOwnedVersions(key:string,owner:string,size:number,recorded:string|undefined,assertCurrent:()=>Promise<void>,etag?:string){
+    const candidates=new Set([...(recorded?[recorded]:[]),...(await bucket.listVersions(key)).filter(version=>!version.deleteMarker).map(version=>version.versionId)]);
+    for(const versionId of candidates){
+      const head=await bucket.head(key,{versionId});
+      // Already removed by an earlier, possibly unconfirmed, attempt.
+      if(!head)continue;
+      if(head.uploadOwner!==owner){if(versionId===recorded)throw Error('Version ownership changed');continue;}
+      if(head.size!==size||etag!==undefined&&head.etag!==etag)throw Error('Version ownership changed');
+      await assertCurrent();await bucket.deleteVersion(key,versionId);
+      if(await bucket.head(key,{versionId}))throw Error('Version remains after deletion');
     }
   }
   const observe=(sessionId:string,phase:DirectUploadMetric['phase'],started:number,bytes?:number)=>{try{deps.observe?.({sessionId,phase,durationMs:Math.round(performance.now()-started),...(bytes!==undefined?{bytes}:{}),rssBytes:process.memoryUsage().rss});}catch{/* Diagnostic consumers cannot change a committed result. */}};
@@ -213,11 +245,13 @@ export function createDirectUploadService(deps:{db:Database;bucket:WasabiBucket;
       const length=directPartLength(asset.size,number),previous=asset.parts[String(number)];
       if(previous&&previous!==digest)throw new PublicError('Part identity mismatch.',409);
       await assertClaim(id,token);
-      if(!asset.handle){asset.handle=await storageControl(id,'sign',()=>bucket.beginMultipart(asset.key,asset.type,id));await saveAssets(id,token,assets,'uploading');}
+      const mode=await storageControl(id,'sign',storageMode);
+      if(!storageModeMatches(assets,mode))throw reconciliationRequired();
+      if(!asset.handle){asset.handle=await storageControl(id,'sign',()=>bucket.beginMultipart(asset.key,asset.type,id,mode));if(mode==='enabled')asset.versioning='enabled-v1';await saveAssets(id,token,assets,'uploading');}
       asset.parts[String(number)]=digest;await saveAssets(id,token,assets,'uploading');
       const url=await storageControl(id,'sign',()=>bucket.signPart(asset.key,asset.handle,number,length,digest));observe(id,'sign',started,length);
       return {url,headers:{'x-amz-checksum-sha256':digest},expiresIn:300};
-    } catch(error){if(error instanceof Error&&error.message==='DIRECT_NATIVE_VERSIONING_UNSUPPORTED')throw new PublicError('Direct transfer requires a bucket without native object versioning. Ask an administrator to review the storage configuration.',503,'DIRECT_STORAGE_VERSIONING');throw error;}
+    } catch(error){if(error instanceof Error&&['DIRECT_NATIVE_VERSIONING_UNSUPPORTED','DIRECT_STORAGE_MODE_CHANGED'].includes(error.message))throw versioningUnavailable();throw error;}
     finally {await release(id,token);}
   }
   async function status(actor:string,id:string) {
@@ -247,37 +281,62 @@ export function createDirectUploadService(deps:{db:Database;bucket:WasabiBucket;
       if(!lock)throw new PublicError('File verification is busy. Check this upload shortly.',429,'UPLOAD_VERIFY_BUSY');
       verifyLease=true;
       verificationExpiry=now+15*60000;
+      const mode=await storageMode(),versioned=mode==='enabled';
+      if(!storageModeMatches(assets,mode))throw reconciliationRequired();
       const files:Record<string,File>={};
       for(const asset of assets){
         await current();
         let reconciled=false;
-        for(const destination of asset.destinations||[])if(!destination.confirmed){const head=await bucket.head(destination.key);if(head?.uploadOwner===id&&head.size===asset.size){destination.confirmed=true;reconciled=true;}}
+        // A copy whose response was lost is confirmed only when the current version is this session's.
+        for(const destination of asset.destinations||[])if(!destination.confirmed){const head=await bucket.head(destination.key);if(owns(head,id,asset.size)&&(!versioned||validVersion(head!.versionId))){destination.confirmed=true;if(versioned)destination.versionId=head!.versionId;reconciled=true;}}
         if(reconciled)await saveAssets(id,token,assets,'verifying');
         if(!asset.handle)throw new PublicError('Upload parts are missing.',409,'UPLOAD_PARTS_MISSING');
         if(!asset.etag){
-          let alreadyStored=false;
+          let alreadyStored=false,completedVersion:string|undefined;
           let parts:Awaited<ReturnType<WasabiBucket['parts']>>=[];
           try{parts=await bucket.parts(asset.key,asset.handle);}catch(error){const head=await bucket.head(asset.key);if(head?.size!==asset.size||head.uploadOwner!==id)throw error;alreadyStored=true;}
           if(!alreadyStored){
             if(parts.length!==Math.ceil(asset.size/directPartSize)||parts.some((p,i)=>p.number!==i+1||p.size!==directPartLength(asset.size,p.number)||!p.etag||p.sha256!==asset.parts[String(p.number)]))throw new PublicError('Upload parts do not match.',409,'UPLOAD_PARTS_MISMATCH');
             await current();
-            try{await bucket.completeMultipart(asset.key,asset.handle,parts);}catch(error){if(!await bucket.head(asset.key))throw error;}
+            try{completedVersion=(await bucket.completeMultipart(asset.key,asset.handle,parts)).VersionId;}catch(error){if(!await bucket.head(asset.key))throw error;}
           }
-          const head=await bucket.head(asset.key);if(!head||head.size!==asset.size||head.uploadOwner!==id)throw new PublicError('Stored upload ownership or size mismatch.',409);
+          // The completion response names the version. After an ambiguous response only a current version of this
+          // session is accepted; anything else is left for exact-version cleanup.
+          const head=versioned&&validVersion(completedVersion)?await bucket.head(asset.key,{versionId:completedVersion}):await bucket.head(asset.key);
+          if(!head||head.size!==asset.size||head.uploadOwner!==id)throw new PublicError('Stored upload ownership or size mismatch.',409);
+          if(versioned){if(!validVersion(head.versionId))throw reconciliationRequired();asset.versionId=head.versionId;}
           asset.etag=head.etag;await saveAssets(id,token,assets,'verifying');
         }
         yieldPoint();
         const verificationStarted=performance.now();
-        const stored=await bucket.head(asset.key,{checksum:true});
+        const stored=await bucket.head(asset.key,{checksum:true,...(versioned?{versionId:asset.versionId}:{})});
         if(!stored||stored.size!==asset.size||stored.uploadOwner!==id||stored.etag!==asset.etag)throw new PublicError('Stored upload ownership or size mismatch.',409);
         const checksum=storedMultipartIntegrity(asset.size,asset.parts,stored);
         observe(id,'verify',verificationStarted);
         const file=storedUploadFile(asset,{key:asset.key,etag:asset.etag,sha256:checksum,promote:async(key,type)=>{
           await current();
           const previous=asset.destinations?.find(d=>d.key===key);
-          if(previous){const head=await bucket.head(key);if(head?.uploadOwner===id&&head.size===asset.size){previous.confirmed=true;await saveAssets(id,token,assets,'verifying');return {etag:head.etag};}if(head)throw new PublicError('The upload destination is already in use.',409,'UPLOAD_NAME_IN_USE');if(previous.copyProtocol!=='multipart-receipt-v1')throw new PublicError('Legacy storage operation needs administrator reconciliation.',409,'UPLOAD_RECONCILIATION_REQUIRED');}
+          if(previous){
+            const head=await bucket.head(key);
+            // On a versioned bucket the current version must be the one this session recorded, if it recorded one.
+            if(owns(head,id,asset.size)&&(!versioned||validVersion(head!.versionId)&&(previous.versionId===undefined||previous.versionId===head!.versionId))){previous.confirmed=true;if(versioned)previous.versionId=head!.versionId;await saveAssets(id,token,assets,'verifying');return {etag:head!.etag,...(versioned?{versionId:head!.versionId}:{})};}
+            if(head)throw new PublicError('The upload destination is already in use.',409,'UPLOAD_NAME_IN_USE');
+            if(previous.copyProtocol!=='multipart-receipt-v1')throw new PublicError('Legacy storage operation needs administrator reconciliation.',409,'UPLOAD_RECONCILIATION_REQUIRED');
+            // A recorded version that is no longer current is never copied again over the top.
+            if(versioned&&previous.versionId!==undefined)throw reconciliationRequired();
+          }
           const destination:Destination=previous||{key,confirmed:false,copyProtocol:'multipart-receipt-v1'};if(!previous)asset.destinations=[...(asset.destinations||[]),destination];await saveAssets(id,token,assets,'verifying');
-          try{const started=performance.now(),result=await bucket.copy(asset.key,key,asset.etag!,type,id,true,{handle:destination.handle,created:async handle=>{destination.handle=handle;await saveAssets(id,token,assets,'verifying');},assertCurrent:current,signal:options.signal});destination.confirmed=true;await saveAssets(id,token,assets,'verifying');observe(id,'promote',started,asset.size);return result;}
+          try{
+            const started=performance.now(),result=await bucket.copy(asset.key,key,asset.etag!,type,id,true,{handle:destination.handle,created:async handle=>{destination.handle=handle;await saveAssets(id,token,assets,'verifying');},assertCurrent:current,signal:options.signal,...(versioned?{sourceVersionId:asset.versionId}:{})});
+            if(versioned){
+              // Pin the copy to the version it created; without one in the response, only a current version of this session counts.
+              let versionId=result.versionId;
+              if(!validVersion(versionId)){const head=await bucket.head(key);versionId=owns(head,id,asset.size)?head!.versionId:undefined;}
+              if(!validVersion(versionId)||!owns(await bucket.head(key,{versionId}),id,asset.size))throw reconciliationRequired();
+              destination.versionId=versionId;
+            }
+            destination.confirmed=true;await saveAssets(id,token,assets,'verifying');observe(id,'promote',started,asset.size);return result;
+          }
           catch(error){
             // A yield keeps the receipt handle for the next pass; it is neither a storage timeout nor a conflict.
             if(options.signal?.aborted)throw options.signal.reason??backgroundYieldError();
@@ -331,7 +390,12 @@ export function createDirectUploadService(deps:{db:Database;bucket:WasabiBucket;
       const staged=input.endpoint==='/api/production-workspace';
       const finished=staged?await db.prepare("SELECT id FROM production_staged_files WHERE id=? AND actor_email=? AND state IN ('ready','committed')").bind(id,actor).first():null;
       if(row.state==='ready'||finished)throw new PublicError('A completed upload cannot be cancelled here.',409);
-      for(const asset of assets){await assertClaim(id,token);if(asset.handle&&!asset.etag){try{await bucket.abortMultipart(asset.key,asset.handle);}catch(error){if((error as {$metadata?:{httpStatusCode?:number}}).$metadata?.httpStatusCode!==404)throw error;}}const head=await bucket.head(asset.key);if(head&&head.uploadOwner!==id)throw Error('Temporary ownership changed');await assertClaim(id,token);if(head)await bucket.delete(asset.key);}
+      const mode=await storageMode();
+      if(!storageModeMatches(assets,mode))throw reconciliationRequired();
+      for(const asset of assets){await assertClaim(id,token);if(asset.handle&&!asset.etag){try{await bucket.abortMultipart(asset.key,asset.handle);}catch(error){if((error as {$metadata?:{httpStatusCode?:number}}).$metadata?.httpStatusCode!==404)throw error;}}
+        // Versioned: remove only this session's exact versions, including one whose completion response was lost.
+        if(mode==='enabled'){if(asset.handle)await deleteOwnedVersions(asset.key,id,asset.size,asset.versionId,()=>assertClaim(id,token),asset.etag);continue;}
+        const head=await bucket.head(asset.key);if(head&&head.uploadOwner!==id)throw Error('Temporary ownership changed');await assertClaim(id,token);if(head)await bucket.delete(asset.key);}
       await guardedMutation(db,`EXISTS(SELECT 1 FROM direct_upload_sessions WHERE id=? AND actor_email=? AND claim_id=?)${staged?" AND NOT EXISTS(SELECT 1 FROM production_staged_files WHERE id=? AND actor_email=? AND state IN ('ready','committed'))":''}`,[id,actor,token,...(staged?[id,actor]:[])],[
         ...(staged?[db.prepare("UPDATE production_staged_files SET state='abandoned',updated_at=? WHERE id=? AND actor_email=? AND state='uploading'").bind(iso(),id,actor)]:[]),
         db.prepare("UPDATE direct_upload_sessions SET assets_json=?,state='cancelled',updated_at=? WHERE id=? AND claim_id=?").bind(JSON.stringify(assets),iso(),id,token),
@@ -342,19 +406,54 @@ export function createDirectUploadService(deps:{db:Database;bucket:WasabiBucket;
       else await release(id,token);
     }
   }
+  const destinationReferenced=(key:string)=>db.prepare('SELECT 1 FROM aigc_storage_objects WHERE object_key=? UNION SELECT 1 FROM production_staged_files WHERE object_key=? UNION SELECT 1 FROM project_request_documents WHERE object_key=? UNION SELECT 1 FROM aigc_file_previews WHERE object_key=? UNION SELECT 1 FROM project_files WHERE object_key=? LIMIT 1').bind(key,key,key,key,key).first();
+  // Expiry retains a key tombstone after deleting staged bytes. It
+  // must still reserve that key, but cannot keep temporary bytes live.
+  const liveDestinationReference=(key:string)=>db.prepare("SELECT 1 FROM aigc_storage_objects WHERE object_key=? UNION SELECT 1 FROM production_staged_files WHERE object_key=? AND state<>'expired' UNION SELECT 1 FROM project_request_documents WHERE object_key=? UNION SELECT 1 FROM aigc_file_previews WHERE object_key=? UNION SELECT 1 FROM project_files WHERE object_key=? LIMIT 1").bind(key,key,key,key,key).first();
+  /** Versioned bucket: every delete names an exact version this session wrote, so no delete marker is left and no
+   * foreign version of the same key is touched. A registered (referenced) confirmed copy is kept. */
+  async function cleanupVersioned(row:Session,assets:Asset[],assertCleanup:()=>Promise<void>){
+    const unregistered=new Set<Destination>();
+    for(const asset of assets)for(const destination of asset.destinations||[])if(!destination.confirmed){
+      if(destination.handle){await assertCleanup();try{await bucket.abortMultipart(destination.key,destination.handle);}catch(error){if(statusOf(error)!==404)throw error;}}
+      // The process may have stopped after persisting the copy intent but before obtaining a receipt.
+      else if((await bucket.findMultipart(destination.key)).length)throw Error('Copy receipt missing with pending multipart');
+      const head=await bucket.head(destination.key);
+      // A copy that completed before its response was lost and is still current: the same outcome as a confirmed copy.
+      if(owns(head,row.id,asset.size)&&validVersion(head!.versionId)){destination.confirmed=true;destination.versionId=head!.versionId;continue;}
+      if(!head&&!destination.handle&&await liveDestinationReference(destination.key))throw Error('Missing copy destination is referenced');
+      // Never registered by this session: any version it wrote is removed, even if another record now uses the key.
+      unregistered.add(destination);
+    }
+    for(const asset of assets){
+      await assertCleanup();
+      if(!['file','thumbnail'].includes(asset.slot)||asset.key!==`direct-upload-temporary/${row.id}/${asset.slot}`)throw Error('Invalid cleanup ownership');
+      if(!asset.handle)for(const handle of await bucket.findMultipart(asset.key)){await assertCleanup();await bucket.abortMultipart(asset.key,handle);}
+      if(asset.handle&&!asset.etag){await assertCleanup();try{await bucket.abortMultipart(asset.key,asset.handle);}catch(error){if(statusOf(error)!==404)throw error;}}
+      if(asset.handle)await deleteOwnedVersions(asset.key,row.id,asset.size,asset.versionId,assertCleanup,asset.etag);
+      for(const destination of asset.destinations||[]){
+        if(!unregistered.has(destination)&&await destinationReferenced(destination.key))continue;
+        await deleteOwnedVersions(destination.key,row.id,asset.size,destination.versionId,assertCleanup);
+      }
+    }
+  }
   /** Exact persisted ownership only; never list/delete a shared bucket prefix. */
   async function cleanup(actor?:string) {
     const now=iso(),deferred:string[]=[],cleaned:string[]=[];
     // A deferred row moves behind newer candidates instead of starving cleanup.
     const rows=(await db.prepare(`SELECT * FROM direct_upload_sessions WHERE cleaned_at IS NULL AND (state IN ('ready','cancelled','expired') OR expires_at<=?) AND (claim_id IS NULL OR lease_expires_at<?)${actor?' AND actor_email=?':''} ORDER BY updated_at LIMIT 20`).bind(now,now,...(actor?[actor]:[])).all<Session>()).results;
-    if(rows.length)await bucket.assertDirectReady();
+    const mode=rows.length?await bucket.directStorageMode():undefined;
     for(const row of rows){
       const token=randomUUID();
       try{
         await guardedMutation(db,"EXISTS(SELECT 1 FROM direct_upload_sessions WHERE id=? AND registration_id=? AND cleaned_at IS NULL AND state=? AND assets_json=? AND updated_at=? AND (state IN ('ready','cancelled','expired') OR expires_at<=?) AND (claim_id IS NULL OR lease_expires_at<?))",[row.id,row.registration_id,row.state,row.assets_json,row.updated_at,now,now],[db.prepare('UPDATE direct_upload_sessions SET claim_id=?,lease_expires_at=? WHERE id=?').bind(token,new Date(Date.now()+600000).toISOString(),row.id)]);
         const assertCleanup=async()=>{if(!await db.prepare('SELECT 1 FROM direct_upload_sessions WHERE id=? AND registration_id=? AND claim_id=? AND lease_expires_at>? AND state=?').bind(row.id,row.registration_id,token,iso(),row.state).first())throw Error('Cleanup ownership changed');};
         const assets=sessionAssets(row,parseDirectUpload(JSON.parse(row.payload_json)));
-        const destinationReferenced=(key:string)=>db.prepare('SELECT 1 FROM aigc_storage_objects WHERE object_key=? UNION SELECT 1 FROM production_staged_files WHERE object_key=? UNION SELECT 1 FROM project_request_documents WHERE object_key=? UNION SELECT 1 FROM aigc_file_previews WHERE object_key=? UNION SELECT 1 FROM project_files WHERE object_key=? LIMIT 1').bind(key,key,key,key,key).first();
+        if(mode==='enabled'){
+          if(!storageModeMatches(assets,mode))throw Error('Legacy unversioned receipt');
+          await cleanupVersioned(row,assets,assertCleanup);
+        }else{
+        if(!storageModeMatches(assets,'unversioned'))throw Error('Storage versioning mode changed');
         const resolvedAbsent=new Set<string>();
         for(const asset of assets)for(const destination of asset.destinations||[])if(!destination.confirmed){
           let head=await bucket.head(destination.key);
@@ -363,10 +462,7 @@ export function createDirectUploadService(deps:{db:Database;bucket:WasabiBucket;
           // upload. Only reconcile absence after an exact-key lookup and re-HEAD.
           if(!head&&destination.copyProtocol==='multipart-receipt-v1'&&!destination.handle){
             await assertCleanup();
-            // Expiry retains a key tombstone after deleting staged bytes. It
-            // must still reserve that key, but cannot keep temporary bytes live.
-            const liveReference=await db.prepare("SELECT 1 FROM aigc_storage_objects WHERE object_key=? UNION SELECT 1 FROM production_staged_files WHERE object_key=? AND state<>'expired' UNION SELECT 1 FROM project_request_documents WHERE object_key=? UNION SELECT 1 FROM aigc_file_previews WHERE object_key=? UNION SELECT 1 FROM project_files WHERE object_key=? LIMIT 1").bind(destination.key,destination.key,destination.key,destination.key,destination.key).first();
-            if(liveReference)throw Error('Missing copy destination is referenced');
+            if(await liveDestinationReference(destination.key))throw Error('Missing copy destination is referenced');
             if((await bucket.findMultipart(destination.key)).length)throw Error('Copy receipt missing with pending multipart');
             await assertCleanup();head=await bucket.head(destination.key);
             if(!head)resolvedAbsent.add(destination.key);
@@ -389,10 +485,12 @@ export function createDirectUploadService(deps:{db:Database;bucket:WasabiBucket;
             if(!reference){const head=await bucket.head(key);if(head&&head.uploadOwner!==row.id)throw Error('Destination ownership changed');await assertCleanup();await bucket.delete(key);}
           }
         }
+        }
         await db.prepare("UPDATE direct_upload_sessions SET cleaned_at=?,state=CASE WHEN state='ready' THEN 'ready' ELSE 'expired' END WHERE id=? AND claim_id=?").bind(iso(),row.id,token).run();
         cleaned.push(row.id);
       }catch(error){
-        const reasons:Record<string,string>={'Copy receipt missing with pending multipart':'COPY_RECEIPT_MISSING','Missing copy destination is referenced':'REFERENCED_DESTINATION_MISSING','Promotion requires reconciliation':'COPY_UNCONFIRMED','Cleanup ownership changed':'CLAIM_CHANGED','Temporary ownership changed':'TEMPORARY_OWNER_CHANGED','Destination ownership changed':'DESTINATION_OWNER_CHANGED','Invalid persisted upload ownership':'INVALID_ASSETS','Invalid persisted copy receipt':'INVALID_COPY_RECEIPT'};
+        const reasons:Record<string,string>={'Copy receipt missing with pending multipart':'COPY_RECEIPT_MISSING','Missing copy destination is referenced':'REFERENCED_DESTINATION_MISSING','Promotion requires reconciliation':'COPY_UNCONFIRMED','Cleanup ownership changed':'CLAIM_CHANGED','Temporary ownership changed':'TEMPORARY_OWNER_CHANGED','Destination ownership changed':'DESTINATION_OWNER_CHANGED','Invalid persisted upload ownership':'INVALID_ASSETS','Invalid persisted copy receipt':'INVALID_COPY_RECEIPT',
+          'Invalid persisted version receipt':'INVALID_VERSION_RECEIPT','Legacy unversioned receipt':'LEGACY_RECEIPT','Storage versioning mode changed':'STORAGE_MODE_CHANGED','Version ownership changed':'VERSION_OWNER_CHANGED','Version remains after deletion':'VERSION_DELETE_UNCONFIRMED','Version lookup is ambiguous':'VERSION_LOOKUP_AMBIGUOUS','Unidentified storage version':'VERSION_LOOKUP_AMBIGUOUS'};
         const reason=error instanceof Error?(reasons[error.message]||(['AbortError','TimeoutError','AccessDenied'].includes(error.name)?error.name:'UNCLASSIFIED')):'UNCLASSIFIED';
         deferred.push(row.id);console.warn({event:'direct-upload.cleanup.deferred',sessionId:row.id,reason});
       }

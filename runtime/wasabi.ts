@@ -1,5 +1,5 @@
 import { validateEnvironment } from './environment.ts';
-import { S3Client, HeadObjectCommand, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, GetBucketVersioningCommand, ListMultipartUploadsCommand, CreateMultipartUploadCommand, UploadPartCommand, UploadPartCopyCommand, ListPartsCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand, CopyObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, HeadObjectCommand, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, GetBucketVersioningCommand, ListMultipartUploadsCommand, ListObjectVersionsCommand, CreateMultipartUploadCommand, UploadPartCommand, UploadPartCopyCommand, ListPartsCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand, CopyObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { readUploadSettings } from '../lib/upload-settings.ts';
 import { verifiedUpload } from './verified-upload.ts';
@@ -7,13 +7,17 @@ import { requestedByteRange } from '../lib/http-byte-range.ts';
 import type { HttpObjectRead } from './proxy-file-read.ts';
 import {installStorageDiagnostics} from './storage-diagnostics.ts';
 import { wasabiAgentOptions } from './wasabi-proxy.ts';
+/** Direct transfers support a bucket without versioning, or one with versioning Enabled. Suspended is refused. */
+export type DirectStorageMode = 'unversioned' | 'enabled';
+export type StoredObjectVersion = { versionId: string; deleteMarker: boolean };
+export const validVersionId = (value: unknown): value is string => typeof value === 'string' && value.length > 0 && value.length <= 1024 && value !== 'null' && !value.includes('\0');
 export class WasabiBucket {
     private readonly client: S3Client;
     private readonly bucket: string;
     private readonly prefix: string;
     private readonly preventOverwrite: boolean;
     private readonly storageTimeoutMs: number;
-    private directReadiness?: Promise<void>;
+    private directMode?: { at: number; value: Promise<DirectStorageMode> };
     constructor(env: NodeJS.ProcessEnv = process.env) {
         validateEnvironment(env);
         const required = (key: string) => { if (!env[key])
@@ -35,9 +39,13 @@ export class WasabiBucket {
             httpStatusCode?: number;
         };
     }).$metadata?.httpStatusCode === 404; }
-    async head(key: string, options?: {checksum?: boolean}) { try {
-        const r = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: this.key(key), ...(options?.checksum?{ChecksumMode:'ENABLED' as const}:{}) }), { abortSignal: AbortSignal.timeout(15_000) });
+    /** Without a versionId this reads the current version; with one, exactly that version (null when it is gone). */
+    async head(key: string, options?: {checksum?: boolean; versionId?: string}) {
+        if (options?.versionId !== undefined && !validVersionId(options.versionId)) throw Error('Invalid object version');
+        try {
+        const r = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: this.key(key), ...(options?.versionId?{VersionId:options.versionId}:{}), ...(options?.checksum?{ChecksumMode:'ENABLED' as const}:{}) }), { abortSignal: AbortSignal.timeout(15_000) });
         return { size: r.ContentLength ?? 0, etag: r.ETag?.replaceAll('"', '') ?? '', ...(r.Metadata?.['lifewood-upload-session']?{uploadOwner:r.Metadata['lifewood-upload-session']}:{}),
+            ...(r.VersionId?{versionId:r.VersionId}:{}),
             ...(r.ChecksumSHA256?{checksumSha256:r.ChecksumSHA256}:{}), ...(r.ChecksumType?{checksumType:r.ChecksumType}:{}) };
     }
     catch (error) {
@@ -84,6 +92,31 @@ export class WasabiBucket {
         }
     }
     async delete(key: string) { await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: this.key(key) })); }
+    /** Permanently removes one exact version. Never a key-level delete, so no delete marker is written. */
+    async deleteVersion(key: string, versionId: string) {
+        if (!validVersionId(versionId)) throw Error('Invalid object version');
+        await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: this.key(key), VersionId: versionId }), { abortSignal: AbortSignal.timeout(15_000) });
+    }
+    /** Versions and delete markers of exactly this key, for ownership checks. Lookup only; it never deletes. */
+    async listVersions(key: string): Promise<StoredObjectVersion[]> {
+        const Key = this.key(key), found: StoredObjectVersion[] = [];
+        let KeyMarker: string | undefined, VersionIdMarker: string | undefined;
+        for (let page = 0; ; page++) {
+            if (page >= 10) throw Error('Version lookup is ambiguous');
+            const r = await this.client.send(new ListObjectVersionsCommand({ Bucket: this.bucket, Prefix: Key, KeyMarker, VersionIdMarker, MaxKeys: 1000 }), { abortSignal: AbortSignal.timeout(15_000) });
+            // Keys are listed in order and this key sorts first under its own prefix, so a longer key ends the lookup.
+            let passed = false;
+            for (const [items, deleteMarker] of [[r.Versions ?? [], false], [r.DeleteMarkers ?? [], true]] as const) for (const item of items) {
+                if (item.Key !== Key) { passed = true; continue; }
+                if (!validVersionId(item.VersionId)) throw Error('Unidentified storage version');
+                found.push({ versionId: item.VersionId, deleteMarker });
+            }
+            if (found.length > 1000) throw Error('Version lookup is ambiguous');
+            if (passed || !r.IsTruncated) return found;
+            if (!r.NextKeyMarker || (r.NextKeyMarker === KeyMarker && r.NextVersionIdMarker === VersionIdMarker)) throw Error('Version lookup is ambiguous');
+            KeyMarker = r.NextKeyMarker; VersionIdMarker = r.NextVersionIdMarker;
+        }
+    }
 
     /** GET supplies size and Content-Range itself, avoiding a serial HEAD on normal reads. */
     async readHttpRange(key: string, header: string | null): Promise<HttpObjectRead | null> {
@@ -136,8 +169,10 @@ export class WasabiBucket {
             ...(range ? { contentRange: `bytes ${range.start}-${range.end}/${head.size}` } : {}) };
     }
 
-    async beginMultipart(key: string, contentType: string, owner?:string) {
-        await this.assertDirectReady();
+    /** Without a mode only an unversioned bucket is accepted (the original contract). */
+    async beginMultipart(key: string, contentType: string, owner?:string, mode?:DirectStorageMode) {
+        if (mode === undefined) await this.assertDirectReady();
+        else if (await this.directStorageMode() !== mode) throw Error('DIRECT_STORAGE_MODE_CHANGED');
         const pending=await this.findMultipart(key);
         if(pending.length===1)return pending[0];
         if(pending.length>1)throw Error('Multiple multipart identities require reconciliation');
@@ -150,10 +185,21 @@ export class WasabiBucket {
         if(r.IsTruncated)throw Error('Multipart identity lookup is ambiguous');
         return (r.Uploads||[]).filter(item=>item.Key===this.key(key)&&item.UploadId).map(item=>item.UploadId!);
     }
-    assertDirectReady() {
-        return this.directReadiness ??= this.client.send(new GetBucketVersioningCommand({Bucket:this.bucket}),{abortSignal:AbortSignal.timeout(15000)}).then(result=>{
-            if(result.Status)throw Error('DIRECT_NATIVE_VERSIONING_UNSUPPORTED');
-        }).catch(error=>{this.directReadiness=undefined;throw error;});
+    /** Rechecked at most once a minute, so a configuration change is noticed without restarting. */
+    directStorageMode(): Promise<DirectStorageMode> {
+        if (this.directMode && performance.now() - this.directMode.at < 60_000) return this.directMode.value;
+        const entry = { at: performance.now(), value: this.client.send(new GetBucketVersioningCommand({Bucket:this.bucket}),{abortSignal:AbortSignal.timeout(15000)}).then(result => {
+            if (!result.Status) return 'unversioned' as const;
+            if (result.Status === 'Enabled') return 'enabled' as const;
+            throw Error('DIRECT_NATIVE_VERSIONING_UNSUPPORTED');
+        }) };
+        entry.value.catch(() => { if (this.directMode === entry) this.directMode = undefined; });
+        this.directMode = entry;
+        return entry.value;
+    }
+    /** Callers that delete by key alone (operator abandonment) still require a bucket without versioning. */
+    async assertDirectReady() {
+        if (await this.directStorageMode() !== 'unversioned') throw Error('DIRECT_NATIVE_VERSIONING_UNSUPPORTED');
     }
     async signPart(key: string, uploadId: string, part: number, length: number, sha256: string) {
         return getSignedUrl(this.client, new UploadPartCommand({Bucket:this.bucket,Key:this.key(key),UploadId:uploadId,PartNumber:part,ContentLength:length,ChecksumSHA256:sha256}),
@@ -170,12 +216,15 @@ export class WasabiBucket {
     async abortMultipart(key: string, uploadId: string) {
         await this.client.send(new AbortMultipartUploadCommand({Bucket:this.bucket,Key:this.key(key),UploadId:uploadId}), {abortSignal:AbortSignal.timeout(15_000)});
     }
-    async copy(source: string, destination: string, etag: string, contentType?: string, owner?:string, createOnly=false, receipt?:{handle?:string;created:(handle:string)=>Promise<void>;assertCurrent:()=>Promise<void>;signal?:AbortSignal}) {
+    async copy(source: string, destination: string, etag: string, contentType?: string, owner?:string, createOnly=false, receipt?:{handle?:string;created:(handle:string)=>Promise<void>;assertCurrent:()=>Promise<void>;signal?:AbortSignal;sourceVersionId?:string}):Promise<{etag:string;versionId?:string}> {
         // Keep all verification I/O within the service's fenced 15-minute lease.
         const copyTimeout=Math.min(this.storageTimeoutMs,120_000);
         // The direct-upload service never signs writes to this destination.
         if (this.preventOverwrite && await this.head(destination)) throw Object.assign(Error('Object already exists'), {$metadata:{httpStatusCode:412}});
-        const copySource=`${this.bucket}/${this.key(source).split('/').map(encodeURIComponent).join('/')}`,match=`"${etag.replaceAll('"','')}"`;
+        // A versioned source is pinned to its exact version as well as its ETag.
+        const sourceVersionId=receipt?.sourceVersionId;
+        if(sourceVersionId!==undefined&&!validVersionId(sourceVersionId))throw Error('Invalid object version');
+        const copySource=`${this.bucket}/${this.key(source).split('/').map(encodeURIComponent).join('/')}${sourceVersionId?`?versionId=${encodeURIComponent(sourceVersionId)}`:''}`,match=`"${etag.replaceAll('"','')}"`;
         if(this.preventOverwrite||createOnly){
             // Conditional completion is atomic; HEAD alone cannot prevent a race.
             await receipt?.assertCurrent();
@@ -222,12 +271,12 @@ export class WasabiBucket {
                 await receipt?.assertCurrent();
                 // If this is interrupted after Wasabi completed the object, the next attempt confirms it by owner and size.
                 const done=await this.client.send(new CompleteMultipartUploadCommand({Bucket:this.bucket,Key:this.key(destination),UploadId:uploadId,IfNoneMatch:'*',MultipartUpload:{Parts:[{PartNumber:1,ETag:copied.CopyPartResult?.ETag}]}}),{abortSignal:within(30000)}).catch(error=>{stopIfAborted();throw error;});
-                if(!done.ETag)throw Error('Copy result unconfirmed');return {etag:done.ETag.replaceAll('"','')};
+                if(!done.ETag)throw Error('Copy result unconfirmed');return {etag:done.ETag.replaceAll('"',''),...(validVersionId(done.VersionId)?{versionId:done.VersionId}:{})};
             }catch(error){if(!receipt)await this.abortMultipart(destination,uploadId).catch(()=>{});throw error;}
         }
         const r = await this.client.send(new CopyObjectCommand({Bucket:this.bucket,Key:this.key(destination),CopySource:copySource,CopySourceIfMatch:match,MetadataDirective:'REPLACE',ContentType:contentType || 'application/octet-stream',...(owner?{Metadata:{'lifewood-upload-session':owner}}:{})}), {abortSignal:AbortSignal.timeout(copyTimeout)});
         if (!r.CopyObjectResult?.ETag) throw Error('Copy result unconfirmed');
-        return {etag:r.CopyObjectResult.ETag.replaceAll('"','')};
+        return {etag:r.CopyObjectResult.ETag.replaceAll('"',''),...(validVersionId(r.VersionId)?{versionId:r.VersionId}:{})};
     }
     async signedRead(key: string, name: string, contentType: string, disposition: string) {
         return getSignedUrl(this.client,new GetObjectCommand({Bucket:this.bucket,Key:this.key(key),ResponseContentType:contentType,ResponseContentDisposition:`${disposition}; filename*=UTF-8''${encodeURIComponent(name)}`,ResponseCacheControl:'private, no-store'}),{expiresIn:60});
