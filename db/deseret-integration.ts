@@ -1,6 +1,6 @@
 import { deseretHandoverFiles } from "./deseret-handover-files";
 import { finalSubmissionEvidenceSql } from "./deseret-final-provenance";
-import { archiveClosedStatuses, isStoryboardFileVersion, scopeDeseretReview } from "../lib/deseret-workspace";
+import { archiveClosedStatuses, isStoryboardFileVersion, scopeDeseretReview, storyboardRevisionScopeChanged } from "../lib/deseret-workspace";
 import { createHash, randomUUID } from "node:crypto";
 import type { Database, DatabaseStatement } from "./database";
 import { guardedMutation } from "./mutation-guard";
@@ -45,6 +45,7 @@ export type IntegrationDependencies = {
   clock?: () => number;
 };
 
+const inactiveStoryboardTaskStatuses = ["已暂停", "已交付", "已归档", "已终止"];
 const identity = /^[A-Za-z0-9_-]{1,120}$/;
 const text = (value: unknown, maximum = 2000): value is string => typeof value === "string" && value.length <= maximum;
 const object = (value: unknown): value is Row => Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -532,7 +533,9 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
       ...state.packages.flatMap(pack => [...pack.scenes.map(scene => scene.fileVersionId), ...pack.files.map(file => file.fileVersionId)]),
     ]) : [];
     const reviewFileTasks = new Map(reviewFiles.map(file => [file.id, file.languageTaskId]));
-    const scoped = role === "lead" ? state : scopeDeseretReview(state, (taskId, fileVersionId) =>
+    const { storyboardDrafts, ...publicState } = state;
+    const openTaskIds = new Set(taskRows.filter(task => !inactiveStoryboardTaskStatuses.includes(String(task.status))).map(task => String(task.id)));
+    const scoped = role === "lead" ? publicState : scopeDeseretReview(state, (taskId, fileVersionId) =>
       taskIds.has(taskId) && (role !== "qc" || reviewFileTasks.get(fileVersionId) === taskId));
     const guidance = new Map(materials.filter(item => item.package_id != null).map(item => [String(item.id), item]));
     const activePackages = new Set(scoped.packages.filter(pack => !pack.withdrawn).map(pack => pack.id));
@@ -569,7 +572,9 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
     const latestTasks = role === "lead" ? [] : (await db.prepare(`SELECT id FROM language_projects WHERE project_id=? AND ${role === "producer" ? "editor_email" : "reviewer_email"}=? ORDER BY id`).bind(projectId, email).all<Row>()).results;
     if (refreshed.actor.access !== context.actor.access || (role !== "lead" && taskRows.some(task => !latestTasks.some(latest => latest.id === task.id)))) reject("Project access changed. Reload the project.", "DESERET_FORBIDDEN", 403);
     return {
-      ...state, ...scoped, feedback,
+      ...publicState, ...scoped, feedback,
+      ...(role === "lead" && storyboardDrafts ? { storyboardDraftCount: storyboardDrafts.filter(draft => openTaskIds.has(draft.languageTaskId)).length } : {}),
+      ...(role === "producer" && storyboardDrafts ? { storyboardBatchEditing: true } : {}),
       projectId, projectTitle: object(snapshot.project) && typeof snapshot.project.title === "string" ? snapshot.project.title : String(context.project.name), deseretProjectId: String(row.deseret_project_id), sourceRevision: String(row.source_revision), submissionVersion: Number(row.submission_version), role,
       brief: object(snapshot.brief) ? snapshot.brief : {}, materialManifest: materials.filter(item => item.package_id == null)
         .map(item => ({ ...JSON.parse(String(item.manifest_json)), ...receipt(item) })),
@@ -641,6 +646,10 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
       const editableTask = await db.prepare("SELECT status FROM language_projects WHERE id=? AND project_id=? AND editor_email=?").bind(file.languageTaskId, projectId, email).first<{ status: string }>();
       if (!editableTask || !progressEditableStatuses.includes(editableTask.status)) reject("The production task is not open for scene updates.", "DESERET_PRODUCTION_BLOCKED", 409);
       const previous = state.scenes.find(item => item.id === payload.id);
+      if (state.storyboardDrafts && (!previous || previous.fileVersionId !== file.id))
+        reject("Save a draft and submit its video for quality review.", "DESERET_STORYBOARD_DRAFT_REQUIRED", 409);
+      if (state.storyboardDrafts && state.revisionSceneIds.length && !state.revisionSceneIds.includes(String(payload.id)))
+        reject("Only scenes requested for revision can change.", "DESERET_REVISION_TARGET_REQUIRED", 409);
       if (!previous && state.scenes.length >= 200) reject("A review package supports up to 200 scenes.", "DESERET_SCENE_LIMIT", 422);
       if (previous && previous.languageTaskId !== file.languageTaskId) reject("A scene must remain in its assigned language task.", "DESERET_FORBIDDEN", 403);
       if (state.scenes.some(item => item.id !== payload.id && item.order === payload.order)) reject("Choose a unique scene order.");
@@ -697,6 +706,13 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
       const phase = payload.phase;
       if (!["storyboard", "final"].includes(String(phase))) reject("Choose a review phase.");
       if ((phase === "final") !== (state.stage === "final_production")) reject("Publish the current production phase.", "DESERET_PHASE_CONFLICT", 409);
+      if (phase === "storyboard" && current.storyboardDraftCount)
+        reject("Submit the remaining scene drafts for quality review.", "DESERET_STORYBOARD_DRAFTS_PENDING", 409);
+      if (phase === "storyboard" && state.storyboardDrafts?.length) {
+        // A paused task can reopen between loading the lead's panel and committing publication.
+        writeGuards.push("NOT EXISTS(SELECT 1 FROM language_projects WHERE project_id=? AND id IN (SELECT value FROM json_each(?)) AND status NOT IN (SELECT value FROM json_each(?)))");
+        writeValues.push(projectId, JSON.stringify([...new Set(state.storyboardDrafts.map(draft => draft.languageTaskId))]), JSON.stringify(inactiveStoryboardTaskStatuses));
+      }
       let scenes = structuredClone(state.scenes);
       const candidates = await deps.nativeFiles(context, [...scenes.map(scene => scene.fileVersionId), ...(typeof payload.fileVersionId === "string" ? [payload.fileVersionId] : [])]);
       if (phase === "final") {
@@ -709,6 +725,12 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
         if (previousFinal && state.revisionSceneIds.some(id => previousFinal.scenes.some(scene => scene.id === id)) && previousFinal.files.some(file => file.fileVersionId === final.id)) reject("Final revisions require a newly registered video version.", "DESERET_NEW_VERSION_REQUIRED", 409);
         scenes = [{ id: `final-${final.languageTaskId}`, order: 1, version: 1 + state.packages.filter(pack => pack.phase === "final" && pack.files.some(file => file.languageTaskId === final.languageTaskId)).length, duration: Number(payload.duration), ...joinedSceneScript(scenes.filter(scene => scene.languageTaskId === final.languageTaskId)), characterIds: [...new Set(scenes.filter(scene => scene.languageTaskId === final.languageTaskId).flatMap(scene => scene.characterIds))], voiceId: "", fileVersionId: final.id, languageTaskId: final.languageTaskId }];
         if (!Number.isFinite(scenes[0].duration) || scenes[0].duration <= 0 || scenes[0].duration > 14400) reject("Provide the final video duration.");
+      }
+      if (phase === "storyboard" && state.storyboardDrafts) {
+        if (new Set(scenes.map(scene => scene.fileVersionId)).size !== scenes.length)
+          reject("Each scene requires its own submitted video version.", "DESERET_SCENE_DUPLICATE", 409);
+        if (storyboardRevisionScopeChanged(state))
+          reject("Only scenes requested for revision can change.", "DESERET_REVISION_TARGET_REQUIRED", 409);
       }
       if (phase === "storyboard" && state.revisionSceneIds.some(id => {
         const prior = state.packages.filter(pack => pack.phase === "storyboard" && pack.scenes.some(scene => scene.id === id)).at(-1)?.scenes.find(scene => scene.id === id);

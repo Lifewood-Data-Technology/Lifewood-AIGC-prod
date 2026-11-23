@@ -102,7 +102,8 @@
   - 可按“全部 / 可选关联 / 必要移交”筛选；
   - 可选关联逐项勾选；
   - 必要移交只作说明。
-- 项目列表和项目详情的“视频与语言版本”工具栏中，有“核对视频删除”“核对语言版本删除”两个入口。它们根据浏览器保存的提交凭据工作，即使对应行已经消失，刷新后仍能核对结果；完成后只刷新数据，不跳转页面。
+- 从视频标题栏或对应语言版本行发起永久删除。勾选语言版本用于批量分配。当前账号在本浏览器有待核对的删除凭据时，工具栏显示“核对上次视频删除”或“核对上次语言版本删除”。即使原行已消失，仍可核对结果。
+- 存储验证通过后，管理员在 AIGC 服务使用的环境文件中设置 `LIFEWOOD_PERMANENT_DELETE_ENABLED=true`，并将 `LIFEWOOD_PERMANENT_DELETE_RESOURCE` 设为实际的 `MYSQL_DATABASE:WASABI_BUCKET:WASABI_PREFIX` 拼接值，保留前缀末尾的斜杠，重启服务。
 
 ## 测试
 
@@ -153,4 +154,6 @@ Project owners can permanently delete one video or one language version. This re
 
 **Concurrency.** Deletions in one tree, deletions sharing a stored object, and hand-overs to a language under deletion are serialized or refused. The request gate refuses writes into a pending or deleted video or language through any reference.
 
-**Interface.** Wording follows the target. Recovery entries for saved video and language receipts work even after the rows are gone.
+**Interface.** Start deletion from the video header or the language row. Language checkboxes select tasks for assignment. A recovery button appears only when the current account has a saved receipt of that type in this browser. It also works after the original row is gone.
+
+**Deployment.** After validating deletion on isolated storage objects, set `LIFEWOOD_PERMANENT_DELETE_ENABLED=true` in the selected AIGC environment file and bind `LIFEWOOD_PERMANENT_DELETE_RESOURCE` to the actual database, bucket and prefix joined with colons, including the trailing slash. Restart the service.

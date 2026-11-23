@@ -8,6 +8,7 @@ const labels: Record<string, (number: number | null) => string> = {
   final: () => "a final submission",
   final_material: () => "a final submission's materials",
   report: number => number ? `daily report v${number}` : "a daily report",
+  storyboard_draft: () => "a storyboard draft",
   archive: number => number ? `internal production archive #${number}` : "an internal production archive",
   delivery: () => "a delivery",
   share: () => "a share link",
@@ -16,6 +17,14 @@ const labels: Record<string, (number: number | null) => string> = {
 type Target = { logicalFileId?: string; versionId?: string };
 // A logical-file delete removes every version; a single-version delete removes only that version.
 const versionSet = (target: Target) => target.versionId ? { sql: "v.id=?", value: target.versionId } : { sql: "v.file_id=?", value: target.logicalFileId ?? "" };
+
+// Project scope keeps the scan within the owning brief. The second EXISTS correlates across a
+// subquery boundary so both SQLite json_each and the MySQL JSON_TABLE adapter can see the link.
+export function storyboardDraftReferenceSql(versionExpression: string) {
+  return `EXISTS (SELECT 1 FROM project_files source JOIN deseret_project_links link ON link.id=source.project_id
+    WHERE source.id=${versionExpression} AND EXISTS (SELECT 1 FROM json_each(json_extract(link.state_json,'$.storyboardDrafts')) draft
+      WHERE json_extract(draft.value,'$.fileVersionId')=source.id))`;
+}
 
 /** The exact versions bound to formal records stay; the first one found is named in a readable reason. */
 export async function fileVersionReferences(db: Database, target: Target) {
@@ -31,8 +40,9 @@ export async function fileVersionReferences(db: Database, target: Target) {
       UNION ALL SELECT s.file_id, 'share', NULL FROM share_links s
       UNION ALL SELECT m.file_version_id, 'standard', NULL FROM material_standards m
     ) r ON r.version_id=v.id WHERE ${versions.sql}
+    UNION ALL SELECT v.version_number, 'storyboard_draft', NULL FROM aigc_file_versions v WHERE ${versions.sql} AND ${storyboardDraftReferenceSql("v.id")}
     UNION ALL SELECT NULL, 'standard', NULL FROM material_standards WHERE ?<>'' AND logical_file_id=?
-    ORDER BY 1, 2`).bind(versions.value, target.logicalFileId ?? "", target.logicalFileId ?? "").all<Reference>()).results;
+    ORDER BY 1, 2`).bind(versions.value, versions.value, target.logicalFileId ?? "", target.logicalFileId ?? "").all<Reference>()).results;
 }
 
 export function referenceReason(reference: Reference) {
@@ -46,6 +56,7 @@ export function versionsUnreferenced(target: { versionId: string } | { logicalFi
   const versions = "versionId" in target ? "?" : "SELECT id FROM aigc_file_versions WHERE file_id=?";
   const value = "versionId" in target ? target.versionId : target.logicalFileId;
   const checks = [
+    `NOT EXISTS(SELECT 1 FROM aigc_file_versions v WHERE v.id IN (${versions}) AND ${storyboardDraftReferenceSql("v.id")})`,
     `NOT EXISTS(SELECT 1 FROM quality_rounds q WHERE q.file_id IN (${versions}) OR q.report_file_id IN (${versions}))`,
     `NOT EXISTS(SELECT 1 FROM deliveries d WHERE d.file_id IN (${versions}))`,
     `NOT EXISTS(SELECT 1 FROM share_links s WHERE s.file_id IN (${versions}))`,

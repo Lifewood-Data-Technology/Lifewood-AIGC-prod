@@ -7,18 +7,24 @@ import { wasabiAgentOptions } from "./wasabi-proxy.ts";
 /** Explicitly disabled until this exact deployment's storage purge path is verified. */
 export function permanentObjectStore(source: NodeJS.ProcessEnv = process.env): PermanentObjectStore {
   let client: S3Client | undefined;
-  const unavailable = () => new PublicError("Permanent deletion is unavailable until isolated storage validation is completed.", 503, "PERMANENT_DELETION_NOT_VERIFIED");
   function connection() {
     validateEnvironment(source);
     const identity = `${source.MYSQL_DATABASE}:${source.WASABI_BUCKET}:${source.WASABI_PREFIX}`;
-    if (source.LIFEWOOD_PERMANENT_DELETE_ENABLED !== "true" || source.LIFEWOOD_PERMANENT_DELETE_RESOURCE !== identity) throw unavailable();
+    if (source.LIFEWOOD_PERMANENT_DELETE_ENABLED !== "true") {
+      throw new PublicError("Permanent deletion is disabled in this environment.", 503, "PERMANENT_DELETION_DISABLED");
+    }
+    if (source.LIFEWOOD_PERMANENT_DELETE_RESOURCE !== identity) {
+      throw new PublicError("The deletion resource does not match the configured storage.", 503, "PERMANENT_DELETION_RESOURCE_MISMATCH");
+    }
     return client ??= new S3Client({ region: source.WASABI_REGION, endpoint: source.WASABI_ENDPOINT, credentials: { accessKeyId: source.WASABI_ACCESS_KEY_ID!, secretAccessKey: source.WASABI_SECRET_ACCESS_KEY! }, maxAttempts: 1,
       requestHandler: wasabiAgentOptions(source.WASABI_HTTP_PROXY) });
   }
   return {
     async assertReady(locations = []) {
       connection();
-      if (locations.some(location => location.provider !== "wasabi" || location.bucket !== source.WASABI_BUCKET || location.endpoint.replace(/\/$/, "") !== source.WASABI_ENDPOINT?.replace(/\/$/, "") || location.region !== undefined && location.region !== source.WASABI_REGION || location.prefix !== undefined && location.prefix !== source.WASABI_PREFIX)) throw unavailable();
+      if (locations.some(location => location.provider !== "wasabi" || location.bucket !== source.WASABI_BUCKET || location.endpoint.replace(/\/$/, "") !== source.WASABI_ENDPOINT?.replace(/\/$/, "") || location.region !== undefined && location.region !== source.WASABI_REGION || location.prefix !== undefined && location.prefix !== source.WASABI_PREFIX)) {
+        throw new PublicError("The selected files lie outside the configured deletion storage.", 409, "PERMANENT_DELETION_LOCATION_MISMATCH");
+      }
     },
     async abortMultipart(relativeKey, uploadId) {
       const s3 = connection();

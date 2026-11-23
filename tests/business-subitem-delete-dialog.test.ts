@@ -82,3 +82,63 @@ describe("permanent delete dialog for one language", () => {
     } finally { await act(async () => { root.unmount(); }); host.remove(); }
   });
 });
+
+it("shows the storage blocker before the file list and prevents confirmation", async () => {
+  const host = window.document.createElement("div");
+  const root = ReactDOM.createRoot(host);
+  const methods: string[] = [];
+  window.document.body.append(host);
+  try {
+    for (const [reason, locale, expected] of [
+      ["PERMANENT_DELETION_DISABLED", "zh", "管理员尚未启用永久删除。"],
+      ["PERMANENT_DELETION_RESOURCE_MISMATCH", "en", "Ask an administrator to check the storage configuration"],
+      ["PERMANENT_DELETION_LOCATION_MISMATCH", "zh", "所选文件位于允许清理的存储范围之外"],
+      ["UNRECOGNIZED", "en", "Storage could not be verified"],
+    ] as const) {
+      globalThis.fetch = (async (_input, init) => {
+        methods.push(init?.method ?? "GET");
+        return Response.json({ ...preview, availability: { enabled: false, reason } });
+      }) as typeof fetch;
+      await act(async () => { root.render(React.createElement(Dialog, { key: reason, targets: [target], locale, close() {}, onDeleted() {} })); });
+      await settle();
+      const notice = host.querySelector('[role="status"]')!;
+      assert.ok(notice.textContent?.includes(expected));
+      const fileList = host.querySelector(".delete-disclosure")!;
+      assert.ok(notice.compareDocumentPosition(fileList) & window.Node.DOCUMENT_POSITION_FOLLOWING);
+      assert.equal(host.querySelector("input[autocomplete=off]"), null);
+      const confirm = host.querySelector<HTMLButtonElement>("footer button.danger")!;
+      assert.equal(confirm.disabled, true);
+      await click(confirm);
+    }
+    assert.ok(methods.length >= 4 && methods.every(method => method === "GET"));
+  } finally { await act(async () => root.unmount()); host.remove(); }
+});
+
+it("shows a subitem recovery action only for this account's saved receipt, and keeps an open review visible", async () => {
+  const { default: PendingButton } = await import("../app/PendingBusinessDeletionButton.tsx");
+  const { DraftOwner } = await import("../app/useLocalDraft.tsx");
+  const { deletionReceiptKey, notifyBusinessDeletionReceiptsChanged } = await import("../lib/business-deletion-receipt");
+  const owner = "current-owner", item = { kind: "language", id: "recovery-test" } as const;
+  const receipt = JSON.stringify({ ...item, submissionId: "recovery-test-0001", revision: 1, previewHash: "a".repeat(64), confirmationName: "Video A · English" });
+  const host = window.document.createElement("div"), root = ReactDOM.createRoot(host);
+  window.document.body.append(host);
+  window.localStorage.setItem(deletionReceiptKey("other-owner", item), receipt);
+  globalThis.fetch = (async (_input, init) => {
+    assert.notEqual(init?.method, "POST");
+    return Response.json({ code: "NOT_FOUND" }, { status: 404 });
+  }) as typeof fetch;
+  try {
+    await act(async () => {
+      root.render(React.createElement(DraftOwner.Provider, { value: owner },
+        ...(["video", "language"] as const).map(kind => React.createElement(PendingButton, { key: kind, kind, label: kind, locale: "en", onDeleted() {} }))));
+    });
+    await settle();
+    assert.equal(host.querySelector("button"), null);
+    await act(async () => { window.localStorage.setItem(deletionReceiptKey(owner, item), receipt); notifyBusinessDeletionReceiptsChanged(); });
+    assert.deepEqual([...host.querySelectorAll("button")].map(button => button.textContent), ["language"]);
+    await click(host.querySelector("button"));
+    await act(async () => { window.localStorage.removeItem(deletionReceiptKey(owner, item)); notifyBusinessDeletionReceiptsChanged(); });
+    assert.ok(host.querySelector("dialog[open]"));
+    assert.equal(host.querySelector(":scope > button"), null);
+  } finally { await act(async () => root.unmount()); host.remove(); window.localStorage.clear(); }
+});

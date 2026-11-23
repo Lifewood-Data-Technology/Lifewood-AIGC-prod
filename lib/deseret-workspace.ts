@@ -99,7 +99,15 @@ export type DeseretIssueRole = "marketing" | "creative" | "publisher_qa";
 export type DeseretFrameFile = Pick<HandoffMaterial, "id" | "version" | "name" | "mimeType" | "size"> &
   Partial<Omit<HandoffMaterial, "id" | "version" | "name" | "mimeType" | "size">> & { state?: string; nativeVersionId?: string };
 export type DeseretRevisionFrame = { seconds: number; caption?: string; file: DeseretFrameFile };
+export type DeseretStoryboardDraft = {
+  languageTaskId: string;
+  sceneId: string;
+  fileVersionId: string;
+  sceneVersion: number;
+  duration: number;
+};
 export type DeseretIntegrationState = {
+  storyboardDrafts?: DeseretStoryboardDraft[];
   stage: DeseretStage;
   intake: "pending" | "accepted" | "needsSupplement";
   revision: number;
@@ -112,6 +120,19 @@ export type DeseretIntegrationState = {
   supplementNote?: string;
   deliveryLocked?: boolean;
 };
+/** Internal QC may replace only the scenes requested in the current publisher revision. */
+export function storyboardRevisionScopeChanged(state: Pick<DeseretIntegrationState, "packages" | "revisionSceneIds" | "scenes">) {
+  if (!state.revisionSceneIds.length) return false;
+  const reviewed = state.packages.filter(pack => pack.phase === "storyboard" && !pack.withdrawn).at(-1);
+  if (!reviewed || reviewed.scenes.length !== state.scenes.length) return true;
+  const requested = new Set(state.revisionSceneIds);
+  const current = new Map(state.scenes.map(scene => [scene.id, scene]));
+  return reviewed.scenes.some(previous => {
+    const scene = current.get(previous.id);
+    return !scene || (!requested.has(scene.id) &&
+      (previous.fileVersionId !== scene.fileVersionId || previous.version !== scene.version));
+  });
+}
 export type DeseretFileCandidate = {
   id: string;
   name: string;
@@ -123,7 +144,9 @@ export type DeseretFileCandidate = {
   finalSubmission: boolean;
   storageReady: boolean;
 };
-export type DeseretWorkspace = DeseretIntegrationState & {
+export type DeseretWorkspace = Omit<DeseretIntegrationState, "storyboardDrafts"> & {
+  storyboardDraftCount?: number;
+  storyboardBatchEditing?: boolean;
   projectId: string;
   projectTitle: string;
   deseretProjectId: string;

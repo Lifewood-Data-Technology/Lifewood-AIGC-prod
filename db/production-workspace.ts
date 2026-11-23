@@ -1,3 +1,4 @@
+import { changeStoryboardDrafts, outstandingPublisherSceneIds } from "./deseret-storyboard-drafts";
 import { deseretHandoverFiles } from "./deseret-handover-files";
 import { prepareAuditStatement } from "./audit-write";
 import { previousProductionRender, lastProductionFinal } from "./deseret-render-history";
@@ -232,7 +233,13 @@ export async function productionWorkspaceData(email: string, taskId: string) {
   const state = link ? JSON.parse(link.state_json) as DeseretIntegrationState : null;
   const publishedFinalVersionIds = state?.packages.filter(pack => pack.phase === "final")
     .flatMap(pack => pack.files.filter(file => file.languageTaskId === taskId).map(file => file.fileVersionId)) ?? [];
-  const deseret = state && link ? { revision: Number(link.revision), publishedFinalVersionIds, stage: state.stage, intake: state.intake, materials: state.materials, scenes: state.scenes.filter(scene => scene.languageTaskId === taskId) } : undefined;
+  const taskFiles = new Map(visible.map(file => [String(file.id),file]));
+  const deseret = state && link ? {
+    revision: Number(link.revision), publishedFinalVersionIds, stage: state.stage, intake: state.intake, materials: state.materials,
+    scenes: state.scenes.filter(scene => scene.languageTaskId === taskId).map(scene=>({...scene,qualityStatus:String(taskFiles.get(scene.fileVersionId)?.status ?? "")})),
+    drafts: (state.storyboardDrafts ?? []).filter(draft=>draft.languageTaskId===taskId).map(({languageTaskId:_,...draft})=>({...draft,name:String(taskFiles.get(draft.fileVersionId)?.name ?? "")})),
+    storyboardRevisionOnly: state.revisionSceneIds.length > 0, revisionSceneIds: outstandingPublisherSceneIds(state,taskId),
+  } : undefined;
   const handoverFiles = link && ctx.actor.access === "production"
     ? await deseretHandoverFiles(ctx.db, email, String(ctx.task.project_id), { taskId }) : [];
   return { deseret, handoverFiles, pendingFinalVersionId, task: ctx.task, flowEvents, flowFiles:visibleMembers(flowFiles), files: visible, libraryFiles, documents: documents.map(d=>({...d,kind:"document",document:true})), handovers, members:visibleMembers(members), finals, finalFiles:visibleMembers(finalFiles), staged, checkpoints, checkpointFiles:visibleMembers(checkpointFiles) };
@@ -245,6 +252,23 @@ export async function submitProductionWorkspace(email: string, payload: Record<s
   const hash=await submissionDigest(canonicalSubmission("production.workspace.submit",payload));
   const previous=await db.prepare("SELECT * FROM production_submission_receipts WHERE id=?").bind(id).first<Row>();
   if(previous){if(previous.actor_email!==email||previous.payload_hash!==hash)throw new PublicError("Submission identity mismatch.",409);return JSON.parse(String(previous.response_json));}
+  if (["storyboard_draft","storyboard_remove","storyboard_submit"].includes(payload.kind)) {
+    try {
+      const ctx = await productionWorkspaceContext(email,taskId,true);
+      const {task,actor} = ctx;
+      await ensureProductionWorkspaceFolders(db,taskId,email);
+      return await changeStoryboardDrafts({
+        db,taskId,projectId:String(task.project_id),email,actorName:actor.name,reviewer:String(task.reviewer_email||""),
+        taskLabel:`${task.project_name} · ${task.language}`,revision:Number(task.revision),guard:taskGuard(ctx),
+        head:key=>ctx.bucket.head(key),summary:projectSummaryUpdateStatement(db,String(task.project_id)),
+      },payload,hash);
+    } catch (error) {
+      // A concurrent identical confirmation can commit between reading its receipt and rechecking the task state.
+      const replay = await db.prepare("SELECT response_json FROM production_submission_receipts WHERE id=? AND actor_email=? AND payload_hash=?").bind(id,email,hash).first<{response_json:string}>();
+      if (replay) return JSON.parse(replay.response_json);
+      throw error;
+    }
+  }
   const ctx=await productionWorkspaceContext(email,taskId,true,payload.kind === "final",payload.kind === "archive"), {task,actor}=ctx;
   const final=payload.kind==="final";
   const daily=payload.kind==="daily";
@@ -314,6 +338,7 @@ export async function submitProductionWorkspace(email: string, payload: Record<s
   const now=new Date().toISOString();
   const staged=(await db.prepare("SELECT * FROM production_staged_files WHERE id IN (SELECT value FROM json_each(?)) AND actor_email=? AND language_project_id=? AND state='ready' AND expires_at>?").bind(JSON.stringify(ids),email,taskId,now).all<Row>()).results;
   const existingData=await productionWorkspaceData(email,taskId);
+  if (final && existingData.deseret?.stage === "production") throw new PublicError("Save storyboard drafts and confirm the batch for quality review.",409,"DESERET_STORYBOARD_WORKFLOW");
   if(final&&!note&&!existingData.deseret)throw new PublicError("Enter work notes and a valid progress percentage.");
   const existing=[...existingData.files,...existingData.libraryFiles].filter(f=>ids.includes(String(f.id)));
   if(materials&&!archive&&(!ids.length||!flowStage&&staged.length!==ids.length))throw new PublicError("Select temporary files to save as materials.");

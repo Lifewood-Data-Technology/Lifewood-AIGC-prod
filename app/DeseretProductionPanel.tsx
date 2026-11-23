@@ -2,7 +2,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { progressEditableStatuses } from "../lib/task-file-access";
 import { workspaceFetch } from "../lib/tab-session";
-import { isStoryboardFileVersion, scopeDeseretReview, type DeseretScene, type DeseretStage, type DeseretWorkspace } from "../lib/deseret-workspace";
+import { isStoryboardFileVersion, scopeDeseretReview, storyboardRevisionScopeChanged, type DeseretScene, type DeseretStage, type DeseretWorkspace } from "../lib/deseret-workspace";
 import { approvedSceneCharacters } from "../lib/deseret-producer-brief";
 import DeseretProducerBrief, { DeseretBriefFiles } from "./DeseretProducerBrief";
 import SelectControl from "./SelectControl";
@@ -334,6 +334,12 @@ function DeseretProductionState({
   const unapprovedScenes = data.scenes.filter(scene => !data.fileCandidates.some(file => file.id === scene.fileVersionId && file.qualityPassed && file.storageReady));
   const publishReason = phase === "final"
     ? (!latestFinal || !validDuration ? (zh ? "请选择质检通过的成片并填写时长。" : "Select a quality-approved final video and enter its duration.") : "")
+    : data.storyboardDraftCount
+      ? (zh ? `还有 ${data.storyboardDraftCount} 个分镜草稿待送质检。` : `${data.storyboardDraftCount} scene draft(s) await submission to QC.`)
+    : data.storyboardDraftCount !== undefined && storyboardRevisionScopeChanged(data)
+      ? (zh ? "请保留本轮无需返修的分镜版本。" : "Keep the approved versions of scenes outside this revision.")
+    : data.storyboardDraftCount !== undefined && new Set(data.scenes.map(scene => scene.fileVersionId)).size !== data.scenes.length
+      ? (zh ? "请为每个分镜提交独立的视频版本。" : "Submit a distinct video version for each scene.")
     : !data.scenes.length
       ? (zh ? "等待剪辑师登记分镜，并由质检员审核分镜视频。" : "Awaiting a registered scene and internal approval of its video.")
       : unapprovedScenes.length
@@ -391,7 +397,7 @@ function DeseretProductionState({
           </div>}
         </>
       )}
-      {can("scene.save") && (visibleScenes.length > 0 || editableSceneSource) && (!taskId || data.tasks.some(task => task.id === taskId && progressEditableStatuses.includes(task.status))) &&
+      {can("scene.save") && (visibleScenes.length > 0 || (!data.storyboardBatchEditing && editableSceneSource)) && (!taskId || data.tasks.some(task => task.id === taskId && progressEditableStatuses.includes(task.status))) &&
         !(
           data.stage === "revision" && data.packages.at(-1)?.phase === "final"
         ) && (
@@ -676,9 +682,9 @@ function SceneEditor({
             value={sceneId}
             onChange={(event) => selectScene(event.target.value)}
           >
-            <option value="">{locale === "zh" ? "新增分镜" : "New scene"}</option>
+            <option value="">{data.storyboardBatchEditing ? (zh ? "选择分镜" : "Select a scene") : zh ? "新增分镜" : "New scene"}</option>
             {data.scenes
-              .filter((scene) => !taskId || scene.languageTaskId === taskId)
+              .filter((scene) => (!taskId || scene.languageTaskId === taskId) && (!data.storyboardBatchEditing || !data.revisionSceneIds.length || data.revisionSceneIds.includes(scene.id)))
               .map((scene) => (
                 <option key={scene.id} value={scene.id}>
                   {c.scene} {scene.order}
@@ -710,6 +716,7 @@ function SceneEditor({
           {c.file}
           <SelectControl
             locale={locale}
+            disabled={data.storyboardBatchEditing}
             value={fileVersionId}
             onChange={(event) => setFileVersionId(event.target.value)}
           >

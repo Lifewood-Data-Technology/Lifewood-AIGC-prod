@@ -2931,7 +2931,7 @@ function Dashboard({
                   return (
                     <button
                       key={s(item.id)}
-                      onClick={() => navigate("quality")}
+                      onClick={() => navigate("quality", { reviewFile: s(item.id) })}
                     >
                       <b>{String(index + 1).padStart(2, "0")}</b>
                       <span>
@@ -10000,7 +10000,7 @@ function PreviousProjectDetailPage({
               </p>
               <button
                 className="primary-button"
-                onClick={() => navigate("quality")}
+                onClick={() => navigate("quality", pendingReviews.length ? { reviewFile: s(pendingReviews[0].id) } : {})}
               >
                 {locale === "zh"
                   ? "返回质检工作区"
@@ -10647,7 +10647,7 @@ function ProjectDetailPage({
               </p>
               <button
                 className="primary-button"
-                onClick={() => navigate("quality")}
+                onClick={() => navigate("quality", pendingReviews.length ? { reviewFile: s(pendingReviews[0].id) } : {})}
               >
                 {locale === "zh"
                   ? "返回质检工作台"
@@ -16815,6 +16815,7 @@ const emptyDetailedChecklist = Object.fromEntries(
 
 function QualityWorkbenchPage({
   platform,
+  initialFileId,
   locale,
   act,
   toast,
@@ -16822,6 +16823,7 @@ function QualityWorkbenchPage({
   uploadFile,
 }: {
   platform: Platform;
+  initialFileId: string;
   locale: Locale;
   act: (action: string, payload: Record<string, string>) => Promise<boolean>;
   toast: (message: string) => void;
@@ -16834,15 +16836,15 @@ function QualityWorkbenchPage({
   const stageRef = useRef<HTMLDivElement>(null);
   const viewerRef=useRef<HTMLDivElement>(null),playerToolsRef=useRef<HTMLDivElement>(null);
   const [playbackErrorHost,setPlaybackErrorHost]=useState<HTMLDivElement|null>(null);
-  const [selectedId, setSelectedId] = useState(
-    s(platform.pendingQuality[0]?.id),
-  );
+  const [selectedId, setSelectedId] = useState(initialFileId || s(platform.pendingQuality[0]?.id));
   const currentSelection = platform.pendingQuality.find(item => s(item.id) === selectedId);
-  const [selectedSnapshot,setSelectedSnapshot] = useState<(typeof platform.pendingQuality)[number] | null>(()=>platform.pendingQuality[0]??null);
-  const selected = currentSelection ?? (selectedId && s(selectedSnapshot?.id)===selectedId ? selectedSnapshot : null) ?? platform.pendingQuality[0] ?? null;
+  const [selectedSnapshot,setSelectedSnapshot] = useState<(typeof platform.pendingQuality)[number] | null>(()=>currentSelection??null);
+  const selected = currentSelection ?? (selectedId ? (s(selectedSnapshot?.id) === selectedId ? selectedSnapshot : null) : platform.pendingQuality[0] ?? null);
   if(selected && selectedSnapshot?.id!==selected.id) setSelectedSnapshot(selected);
   const staleSelection = Boolean(selected && !platform.pendingQuality.some(item=>item.id===selected.id));
-  const replacement = staleSelection ? platform.pendingQuality.find(item=>item.language_project_id===selected?.language_project_id) : undefined;
+  const replacement = staleSelection && selected?.logical_file_id
+    ? platform.pendingQuality.find(item => item.logical_file_id === selected.logical_file_id && n(item.version) > n(selected.version))
+    : undefined;
   useEffect(()=>{
     if(staleSelection)videoRef.current?.pause();
   },[staleSelection]);
@@ -17116,9 +17118,8 @@ function QualityWorkbenchPage({
       return;
     }
     setBusy(true);
-    const next = platform.pendingQuality.find(
-      (item) => item.id !== selected.id,
-    );
+    const next = platform.pendingQuality.find(item => item.id !== selected.id && item.language_project_id === selected.language_project_id)
+      ?? platform.pendingQuality.find(item => item.id !== selected.id);
     qualitySubmissionRef.current = true;
     try {
     if (
@@ -17184,12 +17185,13 @@ function QualityWorkbenchPage({
             : "Locate issues on the video, record actionable revisions and generate an editor-ready report."
         }
       />
+      {selectedId && !selected && <div className="workflow-message" role="status">{zh ? "此视频已不在待审队列。" : "This video is no longer in the review queue."}</div>}
       {staleSelection&&<div className="workflow-message bad" role="alert">
         <strong>{replacement
-          ? (zh?`待审成片已从 v${n(selected?.version)} 更新为 v${n(replacement.version)}，请切换新版后审核。`:`The pending final changed from v${n(selected?.version)} to v${n(replacement.version)}. Open the new version to review.`)
-          : (zh?"当前成片已不在待审队列，请刷新核对任务状态。":"This version is no longer pending review. Check the task status.")}</strong>
+          ? (zh?`待审视频已从 v${n(selected?.version)} 更新为 v${n(replacement.version)}，请切换新版后审核。`:`The pending video changed from v${n(selected?.version)} to v${n(replacement.version)}. Open the new version to review.`)
+          : (zh?"当前视频已不在待审队列，请刷新核对任务状态。":"This version is no longer pending review. Check the task status.")}</strong>
         <p>{zh?"旧版草稿已保留，当前画面暂停且无法提交审核。":"The previous draft is retained. Playback is paused and review submission is locked."}</p>
-        {replacement&&<button type="button" onClick={()=>resetReview(s(replacement.id))}>{zh?"切换到最新待审成片":"Open latest pending final"}</button>}
+        {replacement&&<button type="button" onClick={()=>resetReview(s(replacement.id))}>{zh?"打开新版本":"Open new version"}</button>}
       </div>}
       {selected && integrationProject && <details className="deseret-quality-reference" key={`${platform.account.email}:${s(selected.id)}`}>
         <summary>Deseret Book</summary>
@@ -17237,6 +17239,9 @@ function QualityWorkbenchPage({
                   <span>
                     <strong>{s(item.project_name)}</strong>
                     <small>
+                      {item.scene_order ? `${zh ? "分镜" : "Scene"} ${n(item.scene_order)} · ` : ""}{s(item.original_name)}
+                    </small>
+                    <small>
                       {reviewTaskLanguage(platform, item)} · v{n(item.version)}
                     </small>
                     <small>{formatDate(item.created_at, locale)}</small>
@@ -17259,6 +17264,7 @@ function QualityWorkbenchPage({
                   </small>
                   <h2>{s(selected.project_name)}</h2>
                   <p>
+                    {selected.scene_order ? `${zh ? "分镜" : "Scene"} ${n(selected.scene_order)} · ` : ""}
                     {reviewTaskLanguage(platform, selected)} · v{n(selected.version)} ·{" "}
                     {s(selected.original_name)}
                   </p>
@@ -18057,7 +18063,7 @@ function QualityWorkbenchPage({
                   ) : null}
                   {staleSelection&&<div className="workflow-message bad" role="status">
                     <p>{zh?"此版本已停止审核，旧版草稿保留在本机。":"Review of this version has stopped. Its draft is retained on this device."}</p>
-                    {replacement&&<button type="button" onClick={()=>resetReview(s(replacement.id))}>{zh?"切换到最新待审成片":"Open latest pending final"}</button>}
+                    {replacement&&<button type="button" onClick={()=>resetReview(s(replacement.id))}>{zh?"打开新版本":"Open new version"}</button>}
                   </div>}
                   <div className="quality-decision-actions">
                     <button
@@ -23120,6 +23126,10 @@ function Workspace({
       const language = platform.languages.find(
         (entry) => s(entry.id) === targetId,
       );
+      if (language && s(item.type) === "review" && nav.includes("quality")) {
+        const pending = platform.pendingQuality.find(file => file.language_project_id === targetId);
+        if (pending) return navigate("quality", { reviewFile: s(pending.id) });
+      }
       if (language) return openProject(s(language.project_id), targetId);
     }
     if (
@@ -23279,9 +23289,11 @@ if (account.access === "project") return <ProjectManagementWorkspace platform={p
             uploadFile={uploadFile}
           />
         ) : null;
-      case "quality":
+      case "quality": {
+        const reviewFile = new URLSearchParams(projectOverviewQuery).get("reviewFile") || "";
         return (
-          <QualityWorkbenchPage
+          <QualityWorkbenchPage key={reviewFile}
+            initialFileId={reviewFile}
             platform={platform}
             locale={locale}
             act={act}
@@ -23290,6 +23302,7 @@ if (account.access === "project") return <ProjectManagementWorkspace platform={p
             uploadFile={uploadFile}
           />
         );
+      }
       case "previews":
         return (
           <SharesPage

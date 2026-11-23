@@ -25,7 +25,7 @@ export function isDeseretSubmissionOpen(phase?: EditorProductionPhase) {
 }
 
 export function editorUploadLabel(stage: string | undefined, locale: "zh" | "en", replacing = false) {
-  if (stage === "production") return locale === "zh" ? (replacing ? "替换待审分镜" : "上传分镜送审") : (replacing ? "Replace pending scene" : "Submit scene for QC");
+  if (stage === "production") return locale === "zh" ? "分镜工作区" : "Storyboard workspace";
   if (stage === "final_production") return locale === "zh" ? (replacing ? "替换待审成片" : "上传成片送审") : (replacing ? "Replace pending final" : "Submit final for QC");
   return locale === "zh" ? "提交制作视频" : "Submit production video";
 }

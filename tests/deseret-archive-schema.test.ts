@@ -51,7 +51,8 @@ describe("schema 0010", () => {
 describe("archived versions are formal records", () => {
   it("cannot be deleted while an archive references them", async () => {
     const db = sqliteDatabase();
-    db.sqlite.exec(`CREATE TABLE aigc_file_versions (id TEXT PRIMARY KEY, file_id TEXT, version_number INTEGER);
+    db.sqlite.exec(`CREATE TABLE project_files (id TEXT, project_id TEXT); CREATE TABLE deseret_project_links (id TEXT, state_json TEXT);
+      CREATE TABLE aigc_file_versions (id TEXT PRIMARY KEY, file_id TEXT, version_number INTEGER);
       CREATE TABLE production_checkpoint_files (file_version_id TEXT, checkpoint_id TEXT); CREATE TABLE production_checkpoints (id TEXT, version_number INTEGER);
       CREATE TABLE production_final_submission_files (file_version_id TEXT); CREATE TABLE production_final_submissions (final_version_id TEXT);
       CREATE TABLE quality_rounds (file_id TEXT, report_file_id TEXT, round_number INTEGER); CREATE TABLE deliveries (file_id TEXT); CREATE TABLE share_links (file_id TEXT);
@@ -67,6 +68,12 @@ describe("archived versions are formal records", () => {
     }
     assert.deepEqual(await fileVersionReferences(db, { versionId: "v-free" }), []);
     const free = versionsUnreferenced({ logicalFileId: "f-v-free" });
+    assert.equal(db.sqlite.prepare(`SELECT ${free.sql} AS ok`).get(...free.values)?.ok, 1);
+    db.sqlite.prepare("INSERT INTO project_files VALUES ('v-free','p')").run();
+    db.sqlite.prepare("INSERT INTO deseret_project_links VALUES ('p',?)").run(JSON.stringify({ storyboardDrafts: [{ fileVersionId: "v-free" }] }));
+    assert.equal(db.sqlite.prepare(`SELECT ${free.sql} AS ok`).get(...free.values)?.ok, 0);
+    assert.equal((await fileVersionReferences(db, { versionId: "v-free" }))[0]?.kind, "storyboard_draft");
+    db.sqlite.prepare("UPDATE deseret_project_links SET state_json='{}'").run();
     assert.equal(db.sqlite.prepare(`SELECT ${free.sql} AS ok`).get(...free.values)?.ok, 1);
   });
 });

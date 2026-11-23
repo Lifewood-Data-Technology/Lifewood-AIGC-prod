@@ -251,3 +251,12 @@
 .brief-receipts .brief-file-name { flex:1; min-width:0; overflow-wrap:anywhere; }
 .brief-receipts small { flex:none; }
 .brief-receipts .icon-button { flex:none; width:2rem; height:2rem; }
+.storyboard-batch { display: grid; gap: 1.25rem; min-width: 0; }
+.storyboard-batch fieldset { min-width: 0; display: grid; gap: .8rem; }
+.storyboard-batch section h3 { margin: 0 0 .6rem; }
+.storyboard-batch ol { list-style: none; padding: 0; margin: 0; }
+.storyboard-batch li { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem .7rem; padding-block: .55rem; border-block-end: 1px solid var(--line); }
+.storyboard-batch li strong { min-width: 0; flex: 1 1 12rem; overflow-wrap: anywhere; }
+.storyboard-batch li span { color: var(--muted); font-variant-numeric: tabular-nums; }
+.storyboard-batch label, .storyboard-batch select { min-width: 0; max-width: 100%; }
+.storyboard-batch .production-file-actions { flex-wrap: wrap; }

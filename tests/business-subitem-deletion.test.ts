@@ -470,3 +470,28 @@ describe("the parent after video and language deletions", () => {
     assert.equal(nextVideoCode(["VID-1000", "VID-002", "LEGACY"]), "VID-1001");
   });
 });
+
+it("previews the exact storage blocker and refuses to start until storage matches", async () => {
+  const { permanentObjectStore } = await import("../runtime/permanent-object-store");
+  business();
+  const env: NodeJS.ProcessEnv = { NODE_ENV: "test", LIFEWOOD_ENV: "test", MYSQL_HOST: "127.0.0.1", MYSQL_DATABASE: "lifewood_aigc_test", MYSQL_USER: "lifewood_test",
+    MYSQL_PASSWORD: "test", WASABI_BUCKET: "aigc-dev", WASABI_PREFIX: "lifewood-test/app/", WASABI_REGION: "ap-southeast-1",
+    WASABI_ENDPOINT: "https://s3.ap-southeast-1.wasabisys.com", WASABI_ACCESS_KEY_ID: "test", WASABI_SECRET_ACCESS_KEY: "test",
+    LIFEWOOD_PERMANENT_DELETE_ENABLED: "false", LIFEWOOD_PERMANENT_DELETE_RESOURCE: "" };
+  const guarded = createBusinessDeletionService({ db, storage: permanentObjectStore(env),
+    async authority(email) { return { actor: { email, accountId: "acc-lead", revision: 1, access: "project" }, condition: "1=1", values: [] }; } });
+  const target = { kind: "language", id: "t-en" } as const;
+  for (const [flag, resource, reason] of [
+    ["false", "", "PERMANENT_DELETION_DISABLED"],
+    ["true", "wrong-resource", "PERMANENT_DELETION_RESOURCE_MISMATCH"],
+    ["true", "lifewood_aigc_test:aigc-dev:lifewood-test/app/", "PERMANENT_DELETION_LOCATION_MISMATCH"],
+  ]) {
+    env.LIFEWOOD_PERMANENT_DELETE_ENABLED = flag;
+    env.LIFEWOOD_PERMANENT_DELETE_RESOURCE = resource;
+    const result = await guarded.preview(LEAD, target);
+    assert.deepEqual(result.availability, { enabled: false, reason });
+    await assert.rejects(guarded.start(LEAD, { ...target, submissionId: submission(1), revision: result.revision,
+      previewHash: result.previewHash, confirmationName: result.name }), (err: unknown) => err instanceof PublicError && err.code === reason);
+    assert.equal(db.count("business_deletion_jobs"), 0);
+  }
+});

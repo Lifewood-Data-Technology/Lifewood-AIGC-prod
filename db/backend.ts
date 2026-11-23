@@ -1,3 +1,4 @@
+import { qualityReviewTransition } from "./deseret-quality-review";
 import { deseretSceneSubmission } from "./deseret-scene-submission";
 import { batchHandoverCheckpoint, deseretHandoverStatements, plannedHandoverArchive } from "./deseret-production-archive";
 import { nextVideoCode } from "../lib/video-code";
@@ -24,7 +25,7 @@ import { deseretOutboxStatement, readDeseretState, readableDeseretRequirements }
 import { customerMaintenanceScope } from "./customer-access";
 import { businessUnlockedSql, visibleCustomerSql, visibleProjectSql, visibleRequestSql } from "./business-visibility";
 import { liveFolderSql, liveLogicalFileSql, folderDescendantsSql } from "./file-integrity";
-import { assertFileDeletable, versionsUnreferenced } from "./file-deletion-guard";
+import { assertFileDeletable, storyboardDraftReferenceSql, versionsUnreferenced } from "./file-deletion-guard";
 import fontkit from "@pdf-lib/fontkit";
 import { PDFDocument, rgb } from "pdf-lib";
 import { extractZhipuDocumentText, resolveZhipuModels, runZhipuAnalysis, ZHIPU_SOURCE_TEXT_BUDGET, ZhipuError } from "./zhipu";
@@ -2715,7 +2716,7 @@ export async function getPlatformData(email: string) {
   const rawFiles = (
     await db
       .prepare(
-        `SELECT pf.*, p.name AS project_name, c.name AS client_name, lp.language, lp.video_id, pv.name AS video_name, lp.status AS workflow_status FROM project_files pf JOIN projects p ON p.id = pf.project_id JOIN clients c ON c.id = p.client_id JOIN language_projects lp ON lp.id = pf.language_project_id LEFT JOIN project_videos pv ON pv.id = lp.video_id WHERE ${scopedLanguages.sql} ORDER BY pf.created_at DESC`,
+        `SELECT pf.*, fv.file_id AS logical_file_id, p.name AS project_name, c.name AS client_name, lp.language, lp.video_id, pv.name AS video_name, lp.status AS workflow_status FROM project_files pf LEFT JOIN aigc_file_versions fv ON fv.id=pf.id JOIN projects p ON p.id = pf.project_id JOIN clients c ON c.id = p.client_id JOIN language_projects lp ON lp.id = pf.language_project_id LEFT JOIN project_videos pv ON pv.id = lp.video_id WHERE ${scopedLanguages.sql} ORDER BY pf.created_at DESC`,
       )
       .bind(...scopedLanguages.values)
       .all<Record<string, unknown>>()
@@ -2919,6 +2920,21 @@ export async function getPlatformData(email: string) {
     .sort((left, right) =>
       String(left.created_at).localeCompare(String(right.created_at)),
     );
+  const pendingProjectIds = new Set(pendingQuality.map(file => file.project_id));
+  const pendingDeseretIds = projects.filter(project => project.source_system === "deseret_book" && pendingProjectIds.has(project.id)).map(project => project.id);
+  if (pendingDeseretIds.length) {
+    const links = (await db.prepare("SELECT COALESCE(json_extract(state_json,'$.scenes'),'[]') AS scenes FROM deseret_project_links WHERE id IN (SELECT value FROM json_each(?))")
+      .bind(JSON.stringify(pendingDeseretIds)).all<{ scenes: string }>()).results;
+    const sceneOrders = new Map<string, number>();
+    for (const link of links) {
+      const scenes = JSON.parse(link.scenes) as { fileVersionId: string; order: number }[];
+      for (const scene of scenes) sceneOrders.set(scene.fileVersionId, scene.order);
+    }
+    for (const file of pendingQuality) {
+      const order = sceneOrders.get(String(file.id));
+      if (order !== undefined) file.scene_order = order;
+    }
+  }
   const shares = (
     await db
       .prepare(
@@ -4148,7 +4164,7 @@ function folderAreaVisible(account: PublicAccount, pathCache: string) {
 // Rechecked inside the delete transaction: a checkpoint/final may have been
 // committed after the friendly preflight error above.
 function unreferencedProductionFileSql(fileExpression: string) {
-  return `NOT EXISTS(SELECT 1 FROM aigc_file_versions v WHERE v.file_id=${fileExpression} AND (EXISTS(SELECT 1 FROM production_checkpoint_files m WHERE m.file_version_id=v.id) OR EXISTS(SELECT 1 FROM production_final_submission_files m WHERE m.file_version_id=v.id) OR EXISTS(SELECT 1 FROM production_final_submissions s WHERE s.final_version_id=v.id) OR EXISTS(SELECT 1 FROM deseret_archive_files a WHERE a.file_version_id=v.id)))`;
+  return `NOT EXISTS(SELECT 1 FROM aigc_file_versions v WHERE v.file_id=${fileExpression} AND (EXISTS(SELECT 1 FROM production_checkpoint_files m WHERE m.file_version_id=v.id) OR EXISTS(SELECT 1 FROM production_final_submission_files m WHERE m.file_version_id=v.id) OR EXISTS(SELECT 1 FROM production_final_submissions s WHERE s.final_version_id=v.id) OR EXISTS(SELECT 1 FROM deseret_archive_files a WHERE a.file_version_id=v.id) OR ${storyboardDraftReferenceSql("v.id")}))`;
 }
 
 // Exact versions bound to formal records (QC, final, report, delivery, share, standard) stay.
@@ -10494,6 +10510,8 @@ export async function runWorkflowAction(
         "The current video version is not available for submission.",
       );
     const sceneSubmission = await deseretSceneSubmission(db, String(logicalFile.project_id), String(logicalFile.language_project_id), String(logicalFile.current_version_id));
+    if (sceneSubmission.storyboard)
+      throw new PublicError("Submit storyboard drafts together from the production workspace.", 409, "DESERET_STORYBOARD_BATCH_REQUIRED");
     const statements: DatabaseStatement[] = [
       db
         .prepare(
@@ -10505,9 +10523,7 @@ export async function runWorkflowAction(
           `UPDATE aigc_files SET status = 'pending_qc', updated_at = ? WHERE id = ?`,
         )
         .bind(now, logicalFile.id),
-      sceneSubmission.storyboard
-        ? db.prepare("UPDATE language_projects SET status='待质检', updated_at=?, revision=revision+1 WHERE id=?").bind(now, logicalFile.language_project_id)
-        : db
+      db
         .prepare(
           `UPDATE language_projects SET status = '待质检', production_progress = 100, production_progress_at = ?, production_progress_by = ?, updated_at = ?, revision = revision + 1 WHERE id = ?`,
         )
@@ -10541,8 +10557,8 @@ export async function runWorkflowAction(
           )
           .bind(crypto.randomUUID(),
           logicalFile.reviewer_email,
-          sceneSubmission.storyboard ? "新分镜待质检" : "新成品待质检",
-          sceneSubmission.storyboard ? "Storyboard scene awaiting quality review" : "New final awaiting quality review",
+          "新成品待质检",
+          "New final awaiting quality review",
           `“${logicalFile.project_name}”${logicalFile.language}版本已提交质检。`,
           `The ${logicalFile.language} version of “${logicalFile.project_name}” is ready for quality review.`,
           logicalFile.language_project_id,
@@ -10747,8 +10763,9 @@ export async function runWorkflowAction(
       .bind(file.language_project_id)
       .first<{ next_round: number }>();
     const roundNumber = count?.next_round ?? 1;
-    const deseretReview = await db.prepare("SELECT id FROM deseret_project_links WHERE id=?").bind(file.project_id).first();
-    const nextStatus = payload.result === "approved" ? (deseretReview ? "制作中" : "待客户预览") : "质检驳回";
+    const { deseret: deseretReview, nextStatus, sceneOrder, guard: phaseGuard } = await qualityReviewTransition(
+      db, String(file.project_id), String(file.language_project_id), payload.fileId, payload.result === "approved",
+    );
     const reviewer = await db
       .prepare(`SELECT name FROM accounts WHERE email = ?`)
       .bind(actor.email)
@@ -10765,7 +10782,8 @@ export async function runWorkflowAction(
     const reportLogicalFileId = crypto.randomUUID();
     const reportStorageObjectId = crypto.randomUUID();
     const dateStamp = now.slice(0, 10).replaceAll("-", "");
-    const reportName = `${safePart(String(file.project_name))}_${safePart(String(file.video_name))}_${safePart(String(file.language))}_QC_REPORT_v${String(Number(file.version || 1)).padStart(3, "0")}_${safePart(reviewerName)}_${dateStamp}.pdf`;
+    const sceneSuffix = sceneOrder === null ? "" : `_S${sceneOrder}_R${roundNumber}`;
+    const reportName = `${safePart(String(file.project_name))}_${safePart(String(file.video_name))}_${safePart(String(file.language))}${sceneSuffix}_QC_REPORT_v${String(Number(file.version || 1)).padStart(3, "0")}_${safePart(reviewerName)}_${dateStamp}.pdf`;
     const reportObjectKey = projectStorageKey({environment: process.env.LIFEWOOD_ENV,
       legacyKey: `clients/quality-reports/projects/${safePart(String(file.project_id))}/videos/${safePart(String(file.video_id))}/languages/${safePart(String(file.language_project_id))}/rounds/${roundNumber}/${reportStorageObjectId}.pdf`,
       folderNames: await readableStorageFolders(reportFolder.id), fileId: reportLogicalFileId,
@@ -10906,7 +10924,7 @@ export async function runWorkflowAction(
           now,
         ),
     ];
-    if (approved) {
+    if (approved && sceneOrder === null) {
       statements.push(
         db
           .prepare(
@@ -10920,7 +10938,14 @@ export async function runWorkflowAction(
           .bind(now, file.language_project_id, file.language_project_id),
       );
     }
-    const notificationRows = approved
+    const notificationRows = sceneOrder !== null
+      ? [file.editor_email, file.project_owner_email].map(recipient => [
+          String(recipient || ""), approved ? "quality" : "revision",
+          approved ? "分镜通过质检" : "分镜退回修改", approved ? "Scene approved" : "Scene returned for revision",
+          `“${file.project_name}” 分镜 ${sceneOrder} · ${file.original_name}${approved ? "" : ` · ${payload.comments.trim()}`}`,
+          `${file.project_name} · Scene ${sceneOrder} · ${file.original_name}${approved ? "" : ` · ${payload.comments.trim()}`}`,
+        ])
+      : approved
       ? [
           [
             String(file.editor_email || ""),
@@ -10998,7 +11023,7 @@ export async function runWorkflowAction(
       );
     }
     try {
-      await guardedMutation(db, `${reviewAuthority.sql}
+      await guardedMutation(db, `${phaseGuard.sql} AND ${reviewAuthority.sql}
         AND EXISTS (SELECT 1 FROM language_projects task JOIN projects project ON project.id = task.project_id
           JOIN clients client ON client.id = project.client_id
           WHERE task.id = ? AND task.revision = ? AND task.status = '待质检' AND task.reviewer_email = ?
@@ -11007,7 +11032,7 @@ export async function runWorkflowAction(
           WHERE version.id = ? AND version.status = 'pending_qc' AND version.deleted_at IS NULL
             AND logical.id = ? AND logical.status = 'pending_qc' AND ${liveLogicalFileSql("logical")})
         AND ${liveFolderSql("?")}`,
-        [...reviewAuthority.values, String(file.language_project_id), Number(file.workflow_revision), actor.email,
+        [...phaseGuard.values, ...reviewAuthority.values, String(file.language_project_id), Number(file.workflow_revision), actor.email,
           String(payload.fileId), String(logical.id), String(reportFolder.id)], statements);
     } catch (error) {
       await fileBucket().delete(reportObjectKey);

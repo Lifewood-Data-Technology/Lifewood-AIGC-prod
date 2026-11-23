@@ -1,8 +1,7 @@
 // Renders the two real scene entry points in jsdom. Neither asks for a scene script any more:
 // - the Deseret production panel's scene editor (also embedded in the native QC window), whose commands go
 //   through the real integration service;
-// - the native production workspace's storyboard submission, which sends video and duration only and needs no
-//   submission note, while replacing a pending video still needs its reason.
+// - the native production workspace's storyboard submission, which saves video and duration as a draft before an explicit batch submission.
 // A workspace draft saved by the previous version (with a script) restores safely without sending its text. Its
 // local script text is kept byte for byte in that draft until it is submitted or cleared, and never carried into
 // another task's draft. An unconfirmed request saved by the previous version is still re-sent byte for byte.
@@ -157,30 +156,86 @@ describe("Native production workspace storyboard submission", () => {
     await settle();
     return view;
   }
-  const submitButton = (host: Element) => host.querySelector("footer .primary-button") as HTMLButtonElement;
+  function button(host: Element, label: string) {
+    const match = [...host.querySelectorAll("button")].find(item => item.textContent === label);
+    assert.ok(match, label);
+    return match;
+  }
+  const saveDraft = (host: Element) => button(host, "保存分镜草稿");
   beforeEach(() => { window.localStorage.clear(); });
 
-  it("submits a new scene with video and duration only, no script and no note", async () => {
-    serve(workspaceData("制作中"));
+  it("saves video and duration as a draft, then sends a batch only after a separate confirmation", async () => {
+    const data = workspaceData("制作中");
+    serve(data);
     previousDraft();
     const { host, unmount } = await open();
     try {
       const section = host.querySelector(".production-handover")!;
-      assert.ok(section, "the storyboard scene section is shown");
-      assert.ok(!section.querySelector("textarea"), "no script field");
+      assert.ok(section);
+      assert.ok(!section.querySelector("textarea"));
       assert.doesNotMatch(host.textContent!, /分镜脚本|Scene script/);
-      assert.equal((section.querySelector("input[type=number]") as HTMLInputElement).value, "12", "the old draft's duration is restored");
-      const noteField = [...host.querySelectorAll("label")].find(label => label.textContent!.includes("提交说明"))!;
-      assert.doesNotMatch(noteField.textContent!, /\*/, "the note is optional");
-      await click(host.querySelector(".production-confirm-materials input")!);
-      assert.equal(submitButton(host).disabled, false, "video, duration and the materials confirmation are enough");
-      await click(submitButton(host));
-      await settle();
-      assert.equal(posts.length, 1);
-      assert.equal(posts[0].note, "");
-      const scene = JSON.parse(String(posts[0].deseretScene)) as Row;
-      assert.deepEqual(scene, { id: "scene-new", version: 0, duration: 12 }, "the old draft's script is not sent");
+      assert.equal((section.querySelector("input[type=number]") as HTMLInputElement).value, "12");
+      assert.equal(button(host, "提交质检").disabled, true);
+      // The next workspace read comes from the server with both this draft and one saved on an earlier day.
+      Object.assign(data.deseret, { drafts: [
+        {sceneId:"earlier",fileVersionId:"old-file",duration:4,sceneVersion:0,name:"Earlier.mp4"},
+        {sceneId:"scene-new",fileVersionId:sceneFile.id,duration:12,sceneVersion:0,name:"scene.mp4"}
+      ] });
+      await click(saveDraft(host)); await settle();
+      assert.deepEqual(posts.map(body=>body.kind),["storyboard_draft"]);
+      assert.deepEqual([posts[0].sceneId,posts[0].fileVersionId,posts[0].duration],["scene-new",sceneFile.id,"12"]);
+      assert.ok(!JSON.stringify(posts).includes(OLD_SCRIPT));
+      assert.match(host.textContent!, /Earlier.mp4/);
+      await click(button(host,"提交质检"));
+      assert.match(host.textContent!, /确认将这 2 个分镜送质检/);
+      assert.equal(posts.length,1);
+      await click(button(host,"继续编辑"));
+      assert.equal(posts.length,1);
+      await click(button(host,"提交质检"));
+      await click(button(host,"确认提交质检")); await settle();
+      assert.deepEqual(posts.map(body=>body.kind),["storyboard_draft","storyboard_submit"]);
+      assert.equal(posts[1].materialsConfirmed,"true");
     } finally { await unmount(); }
+  });
+
+  it("uploads a local scene as production material, then saves its draft without notifying QC", async () => {
+    const data = workspaceData("制作中");
+    serve(data);
+    let upload: Record<string,string> = {};
+    const original = Object.getOwnPropertyDescriptor(globalThis,"XMLHttpRequest");
+    class UploadRequest {
+      upload = {};
+      status = 200;
+      responseText = "";
+      onload = () => {};
+      open() {}
+      setRequestHeader() {}
+      send(form: FormData) {
+        upload = Object.fromEntries(["id","purpose","category","task"].map(key=>[key,String(form.get(key))]));
+        this.responseText = JSON.stringify({file:{id:upload.id,name:"first.mp4",mimeType:"video/mp4",kind:"video",size:4,staged:true,purpose:upload.purpose,category:upload.category}});
+        this.onload();
+      }
+    }
+    Object.defineProperty(globalThis,"XMLHttpRequest",{value:UploadRequest,configurable:true});
+    const {host,unmount} = await open();
+    try {
+      const input = host.querySelector(".storyboard-batch input[type=file]")!;
+      Object.defineProperty(input,"files",{value:[new File(["test"],"first.mp4",{type:"video/mp4"})],configurable:true});
+      await act(async()=>{input.dispatchEvent(new window.Event("change",{bubbles:true}));});
+      await click(button(host,"上传视频")); await settle();
+      assert.equal(upload.purpose,"materials");
+      assert.equal(upload.category,"video");
+      assert.equal(upload.task,TASK);
+      assert.equal(posts.length,0);
+      await setValue(host.querySelector(".production-handover input[type=number]") as HTMLInputElement,"8");
+      assert.equal(saveDraft(host).disabled,false);
+      await click(saveDraft(host)); await settle();
+      assert.deepEqual(posts.map(body=>[body.kind,body.fileVersionId]),[["storyboard_draft",upload.id]]);
+    } finally {
+      await unmount();
+      if (original) Object.defineProperty(globalThis,"XMLHttpRequest",original);
+      else Reflect.deleteProperty(globalThis,"XMLHttpRequest");
+    }
   });
 
   it("keeps the old draft's local script text after opening and after a duration change, until a successful submission", async () => {
@@ -192,10 +247,10 @@ describe("Native production workspace storyboard submission", () => {
       await setValue(host.querySelector(".production-handover input[type=number]") as HTMLInputElement, "15");
       await settle();
       assert.deepEqual(storedScene(), { id: "scene-new", version: 0, duration: "15", script: OLD_SCRIPT }, "a duration change keeps the text");
-      await click(host.querySelector(".production-confirm-materials input")!);
-      await click(submitButton(host));
+      await click(saveDraft(host));
       await settle();
-      assert.deepEqual(JSON.parse(String(posts[0].deseretScene)), { id: "scene-new", version: 0, duration: 15 }, "the text is never sent");
+      assert.equal(posts[0].duration,"15");
+      assert.ok(!JSON.stringify(posts).includes(OLD_SCRIPT));
       assert.ok(!JSON.stringify(window.localStorage).includes(OLD_SCRIPT), "the submitted draft is gone with its text");
     } finally { await unmount(); }
   });
@@ -224,8 +279,7 @@ describe("Native production workspace storyboard submission", () => {
       await act(async () => { openProductionWorkspace(TASK, "final"); });
       await settle();
       const button = (label: string) => [...host.querySelectorAll("button")].find(item => item.textContent === label)!;
-      await click(button("清空本次草稿"));
-      await click(button("确认清空"));
+      await click(button("清空当前编辑"));
       await settle();
       assert.ok(!JSON.stringify(window.localStorage).includes(OLD_SCRIPT), "clearing the draft drops the text");
     } finally { await unmount(); }
@@ -236,24 +290,40 @@ describe("Native production workspace storyboard submission", () => {
     previousDraft();
     const { host, unmount } = await open();
     try {
-      await click(host.querySelector(".production-confirm-materials input")!);
       await setValue(host.querySelector(".production-handover input[type=number]") as HTMLInputElement, "0");
-      assert.equal(submitButton(host).disabled, true);
+      assert.equal(saveDraft(host).disabled, true);
     } finally { await unmount(); }
   });
 
-  it("still requires the reason when replacing a pending scene video", async () => {
-    serve(workspaceData("待质检", { pendingFinalVersionId: "file-scene-v1" }));
-    previousDraft();
-    const { host, unmount } = await open();
+  it("shows submitted scenes read-only during QC", async () => {
+    serve(workspaceData("待质检"));
+    const {host,unmount} = await open();
     try {
-      assert.match(host.textContent!, /替换原因 \*/);
-      await click(host.querySelector(".production-confirm-materials input")!);
-      assert.equal(submitButton(host).disabled, true, "an empty reason blocks the replacement");
-      const reason = [...host.querySelectorAll("label")].find(label => label.textContent!.includes("替换原因"))!.querySelector("textarea")!;
-      await setValue(reason, "Wrong colour grade");
-      assert.equal(submitButton(host).disabled, false);
+      assert.match(host.textContent!, /分镜进度/);
+      assert.ok(!host.querySelector(".storyboard-batch fieldset"));
+      assert.ok(![...host.querySelectorAll("button")].some(b => b.textContent === "确认提交质检"));
     } finally { await unmount(); }
+  });
+
+  it("allows a saved replacement to go to QC while a different returned scene is still in production", async () => {
+    const data = workspaceData("质检驳回");
+    Object.assign(data.deseret, {
+      scenes: [
+        {...historical,id:"a",order:1,qualityStatus:"qc_approved"},
+        {...historical,id:"b",order:2,qualityStatus:"rejected"},
+        {...historical,id:"c",order:3,qualityStatus:"rejected"},
+      ],
+      drafts:[{sceneId:"c",fileVersionId:sceneFile.id,duration:8,sceneVersion:1,name:"C-v2.mp4"}]
+    });
+    serve(data);
+    const {host,unmount} = await open();
+    try {
+      const options = [...host.querySelector<HTMLSelectElement>(".production-handover select")!.options];
+      assert.deepEqual(options.map(option=>option.value),["","b","c"]);
+      assert.equal(button(host,"提交质检").disabled,false);
+      await click(button(host,"提交质检")); await click(button(host,"确认提交质检")); await settle();
+      assert.deepEqual(posts.map(body=>body.kind),["storyboard_submit"]);
+    } finally {await unmount();}
   });
 
   it("re-sends an unconfirmed request saved by the previous version byte for byte", async () => {
@@ -263,7 +333,7 @@ describe("Native production workspace storyboard submission", () => {
     previousDraft({ pending });
     const { host, unmount } = await open();
     try {
-      await click(submitButton(host));
+      await click(button(host,"核对本次提交结果"));
       await settle();
       assert.deepEqual(posts, [pending]);
     } finally { await unmount(); }

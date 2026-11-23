@@ -26,6 +26,14 @@ export function productionWorkspaceError(message: string, locale: "zh" | "en", m
   if (locale === "en") return message || "The operation could not be confirmed. Refresh to check.";
   if (/[\u3400-\u9fff]/.test(message)) return message;
   const mappings: [RegExp,string][] = [
+    [/a draft video is (?:no longer available|unavailable)/i,"这个分镜视频已不可用，请在草稿中重新选择任务视频。"],
+    [/refresh the task before saving storyboard/i,"分镜草稿已更新，请刷新后核对待送列表。"],
+    [/select a returned scene|only a returned scene/i,"请选择需要修改的分镜。"],
+    [/choose the new video for this revision|upload the revised video/i,"请为这个分镜选择修改后的视频。"],
+    [/choose a storyboard scene/i,"请选择要保存的分镜。"],
+    [/select a video and enter its duration/i,"请选择分镜视频，并填写大于 0 且不超过 3600 秒的时长。"],
+    [/video is already in the draft/i,"这个视频已经在待送列表中。"],
+    [/confirm the storyboard drafts|save storyboard drafts and confirm|submit storyboard drafts together/i,"请先保存分镜草稿，再确认提交质检。"],
     [/use the storyboard workflow/i,"请从当前出版项目的分镜制作入口继续。"],
     [/accept the publisher brief/i,"请先受理出版社的制作资料，再分配人员。"],
     [/select the scene associated/i,"替换待审视频时，请选择该视频对应的原分镜。"],

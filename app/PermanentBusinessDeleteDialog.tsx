@@ -25,7 +25,10 @@ type Saved = BusinessDeletionReceipt;
 type Props = { accessReviewKey?: string; accessRevoked?: boolean; targets: Target[]; locale: "zh" | "en"; close: () => void; onDeleted: (ids: string[]) => void };
 const messages: Record<string, [string, string]> = {
   DESERET_DELETION_INVENTORY_UNAVAILABLE: ["对接文件的存储记录需要管理员复核。", "An administrator must reconcile the integration storage inventory."],
-  PERMANENT_DELETION_NOT_VERIFIED: ["永久删除暂未开放。", "Permanent deletion is not available yet."],
+  PERMANENT_DELETION_DISABLED: ["管理员尚未启用永久删除。", "An administrator must enable permanent deletion."],
+  PERMANENT_DELETION_RESOURCE_MISMATCH: ["删除范围与当前存储配置不一致，请联系管理员核对。", "Ask an administrator to check the storage configuration for deletion."],
+  PERMANENT_DELETION_LOCATION_MISMATCH: ["所选文件位于允许清理的存储范围之外，请联系管理员核对文件位置。", "Files in this selection are outside the permitted storage location. Ask an administrator to check their location."],
+  PERMANENT_DELETION_NOT_VERIFIED: ["无法验证文件存储，请联系管理员后重新核对。", "Storage could not be verified. Contact an administrator, then review again."],
   DELETION_BUSY: ["有正在进行的上传、提交或清理，请稍后重新核对。", "An upload, submission or cleanup is in progress. Review again later."],
   BUSINESS_OPERATION_ACTIVE: ["有正在进行的上传或提交，请完成后重新核对。", "An upload or submission is in progress. Complete it before reviewing again."],
   BUSINESS_OPERATION_IN_PROGRESS: ["上传等操作未结束或未清理。请核对；不再需要的上传可取消。", "Upload or operation unfinished; cleanup may be pending. Reconcile it, or cancel unwanted uploads."],
@@ -102,7 +105,7 @@ async function request(path: string, body?: object): Promise<unknown> {
   return value;
 }
 const deletionAvailable = (preview: Preview) => preview.available === true || preview.available === undefined && preview.availability?.enabled === true;
-const confirmedStartRejections = new Set(["DESERET_DELETION_INVENTORY_UNAVAILABLE", "PERMANENT_DELETION_NOT_VERIFIED", "STALE_DELETION_PREVIEW", "PROJECT_HISTORY_PROTECTED", "BUSINESS_OPERATION_ACTIVE", "BUSINESS_OPERATION_IN_PROGRESS", "DELETION_BUSY", "INVALID_DELETION_CONFIRMATION", "PROJECT_DELETION_UNFINISHED"]);
+const confirmedStartRejections = new Set(["DESERET_DELETION_INVENTORY_UNAVAILABLE", "PERMANENT_DELETION_NOT_VERIFIED", "PERMANENT_DELETION_DISABLED", "PERMANENT_DELETION_RESOURCE_MISMATCH", "PERMANENT_DELETION_LOCATION_MISMATCH", "STALE_DELETION_PREVIEW", "PROJECT_HISTORY_PROTECTED", "BUSINESS_OPERATION_ACTIVE", "BUSINESS_OPERATION_IN_PROGRESS", "DELETION_BUSY", "INVALID_DELETION_CONFIRMATION", "PROJECT_DELETION_UNFINISHED"]);
 /** A recorded job that stopped short of completion: say what failed and that the same receipt is the safe retry. */
 const unfinishedJobText = (job: Job, zh: boolean) => {
   if (job.state === "pending") return zh ? "删除已确认，尚未开始清理。可点击“核对并继续清理”开始处理。" : "Deletion is confirmed; cleanup has not started. Select “Check and continue” to begin.";
@@ -111,6 +114,10 @@ const unfinishedJobText = (job: Job, zh: boolean) => {
     case "DESERET_DELETION_INVENTORY_UNAVAILABLE": return zh ? "对接文件的存储记录需要管理员复核，清理已暂停。请保留此记录。" : "Cleanup is paused while an administrator reconciles the integration storage inventory. Keep this receipt.";
     case "DELETION_CLEANUP_FAILED": return zh ? `存储文件清理失败（已清理 ${progress}）。记录已隐藏但尚未全部删除。可点击“核对并继续清理”安全重试，不要重新发起删除；多次失败请联系管理员。` : `Storage cleanup failed (${progress} removed). The record is hidden but not fully deleted. Select “Check and continue” to retry safely; do not start a new deletion. If it keeps failing, contact an administrator.`;
     case "INTERRUPTED_WORKER": return zh ? `上次清理被中断（已清理 ${progress}）。可点击“核对并继续清理”安全重试。` : `The previous cleanup was interrupted (${progress} removed). Select “Check and continue” to retry safely.`;
+    case "PERMANENT_DELETION_DISABLED":
+    case "PERMANENT_DELETION_RESOURCE_MISMATCH":
+    case "PERMANENT_DELETION_LOCATION_MISMATCH":
+      return messages[job.errorCode][zh ? 0 : 1];
     case "PERMANENT_DELETION_NOT_VERIFIED": return zh ? "存储服务暂不可用，清理已暂停。稍后点击“核对并继续清理”重试。" : "Storage is unavailable, so cleanup is paused. Select “Check and continue” later to retry.";
     default: return zh ? `清理尚未完成（已清理 ${progress}）。请保留记录，点击“核对并继续清理”重试；多次失败请联系管理员。` : `Cleanup is incomplete (${progress} removed). Keep this receipt and select “Check and continue” to retry. If it keeps failing, contact an administrator.`;
   }
@@ -375,6 +382,8 @@ function DeleteTarget({ target, owner, locale, close, position, total, completed
     <div className="account-access-dialog-body">
       {accessRevoked ? <p role="alert">{zh ? "访问权限已变化，原操作凭据已保留，请核对权限后再继续。" : "Access changed. The original operation receipt is retained. Review access before continuing."}</p> : loading && !finished ? <p role="status">{zh ? "正在核对影响范围…" : "Reviewing impact…"}</p> : <>
         <strong>{finished ? "" : preview?.name || (job ? saved?.confirmationName : "") || ""}</strong>
+        {preview && !saved && !finished && !deletionAvailable(preview) &&
+          <p role="status" className="danger-text">{(messages[preview.availability?.reason ?? ""] || messages.PERMANENT_DELETION_NOT_VERIFIED)[zh ? 0 : 1]}</p>}
         {summary && <><p className="danger-text">{zh ? "确认后将永久清理以下关联记录与独占文件，无法恢复。共享素材及仍被其他对象引用的文件保留。" : "This permanently removes the linked records and exclusive files below. It cannot be undone. Shared material and files referenced elsewhere are retained."}</p>{keepNote && <p className="delete-keep-note" role="note"><strong>{keepNote}</strong></p>}<dl className="delete-impact-grid">{([["projects", "项目", "Projects"], ["tasks", "语言任务", "Language tasks"], ["reports", "正式日报", "Daily reports"], ["quality", "质检记录", "Quality records"], ["deliveries", "交付记录", "Deliveries"], ["files", "文件记录", "Files"], ["retainedObjects", "保留的共享存储对象", "Shared objects retained"]] as const).map(([field, cn, en]) => <div key={field}><dt>{zh ? cn : en}</dt><dd>{summary[field]}</dd></div>)}{disclosure && <div><dt>{zh ? "暂存文件（将被永久丢弃）" : "Temporary files (permanently discarded)"}</dt><dd>{disclosure.temporaryFiles.total}</dd></div>}</dl></>}
         {disclosure && <div className="delete-disclosure">
           <details><summary>{zh ? `正式文件与版本（${disclosure.files.total}）· 随${scopeLabel}删除` : `Official files and versions (${disclosure.files.total}) · deleted with ${scopeLabel}`}</summary><ul>{disclosure.files.items.map(file => <li key={file.id}><span>{file.name || file.id} · v{file.version}</span><small>{[file.uploader, when(file.createdAt), ...file.references.map(reference => referenceText(reference, zh))].filter(Boolean).join(" · ")}</small></li>)}{more(disclosure.files)}</ul></details>
@@ -392,7 +401,7 @@ function DeleteTarget({ target, owner, locale, close, position, total, completed
             <small>{item.optional ? (unlink.includes(item.id) ? (zh ? "清理本对象的这条关联；原件及其他引用保留" : "Clean up this link; the original and other references stay") : (zh ? "不清理：作为原件的历史记录保留，可追溯" : "Not cleaned: kept as a traceable history entry on the original")) : (zh ? `仍被${item.ownerName}使用：保留原件并移交给${item.ownerName}（必要，不可选）` : `Still used by ${item.ownerName}: the original is kept and handed over to ${item.ownerName} (required)`)}</small>
           </li>)}{more(disclosure.shared)}</ul>
         </details>}
-        {finished ? <p role="status">{zh ? "永久清理已完成。" : "Permanent cleanup completed."}</p> : saved ? <p role="status">{zh ? `清理进度：${job?.completedObjects ?? 0} / ${job?.totalObjects ?? "—"}` : `Cleanup: ${job?.completedObjects ?? 0} / ${job?.totalObjects ?? "—"}`}</p> : preview && !deletionAvailable(preview) ? <p role="status">{zh ? "永久删除暂未开放。" : "Permanent deletion is not available yet."}</p> : preview ? <label>{zh ? "输入名称确认" : "Enter the name to confirm"}<input autoComplete="off" value={name} onChange={event => setName(event.target.value)} disabled={busy} placeholder={preview.name} /></label> : null}
+        {finished ? <p role="status">{zh ? "永久清理已完成。" : "Permanent cleanup completed."}</p> : saved ? <p role="status">{zh ? `清理进度：${job?.completedObjects ?? 0} / ${job?.totalObjects ?? "—"}` : `Cleanup: ${job?.completedObjects ?? 0} / ${job?.totalObjects ?? "—"}`}</p> : preview && deletionAvailable(preview) ? <label>{zh ? "输入名称确认" : "Enter the name to confirm"}<input autoComplete="off" value={name} onChange={event => setName(event.target.value)} disabled={busy} placeholder={preview.name} /></label> : null}
       </>}{error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
       {blockers.length > 0 && !accessRevoked && <section className="delete-blockers" aria-label={zh ? "阻止删除的事项" : "Items blocking deletion"}>
         <h3>{zh ? `阻止删除的事项（${blockers.length}）` : `Blocking deletion (${blockers.length})`}</h3>
