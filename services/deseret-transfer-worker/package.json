@@ -1,0 +1,9 @@
+{
+  "name": "@lifewood/deseret-transfer-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {"node": ">=24"},
+  "scripts": {"start": "node cli.mjs"},
+  "dependencies": {"@aws-sdk/client-s3": "3.1121.0"}
+}

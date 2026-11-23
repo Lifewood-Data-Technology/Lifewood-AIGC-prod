@@ -4,7 +4,7 @@
 // editor (after any number of handovers) can read every archived version. Nothing here is ever sent to Deseret.
 import { beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { archiveSelection, archiveStatements, batchHandoverCheckpoint, deseretHandoverStatements, engineeringFolderGuard, nativeArchiveFiles, packageSourceSelection, plannedHandoverArchive, savedArchiveVersionsGuard, taskArchives } from "../db/deseret-production-archive";
+import { archiveSelection, archiveStatements, batchHandoverCheckpoint, deseretHandoverStatements, engineeringFolderGuard, nativeArchiveFiles, publicationHandoverGuard, plannedHandoverArchive, savedArchiveVersionsGuard, taskArchives } from "../db/deseret-production-archive";
 import { productionReadableVersionQuery } from "../db/production-file-access";
 import { PublicError } from "../lib/security-controls";
 import { sqliteDatabase } from "./support/sqlite-database";
@@ -201,11 +201,6 @@ function setupRound() {
   version(h, `eng-${SECRET}-2`, "task-2", "03.project");
   version(h, "voice-1", "task-1", "03.voice", "audio/mpeg");
 }
-/** The lead's explicit confirmation of each scene's archive for its current version and video. */
-const confirmed = (map: Record<string, string>) => Object.fromEntries(Object.entries(map).map(([sceneId, archiveId]) => {
-  const current = h.state().scenes.find(item => item.id === sceneId)!;
-  return [sceneId, { archiveId, sceneVersion: current.version, videoVersionId: current.fileVersionId }];
-}));
 const archiveOf = (taskId: string) => h.db.sqlite.prepare("SELECT id FROM deseret_production_archives WHERE language_project_id=? ORDER BY archive_number DESC").get(taskId) as { id: string } | undefined;
 
 describe("editors archive only versions they may read", () => {
@@ -263,58 +258,36 @@ describe("integration service: internal archives", () => {
   });
 });
 
-describe("integration service: publication gate and pinned sources", () => {
+describe("integration service: publication without engineering archives", () => {
   beforeEach(setupRound);
-  const publish = (sources: Record<string, string> = {}) => command(LEAD, "package.publish", { phase: "storyboard", sources: confirmed(sources) });
+  const publish = () => command(LEAD, "package.publish", { phase: "storyboard" });
 
-  it("accepts only explicit confirmations of the scene's current version and video", async () => {
+  it("publishes without a source selection and leaves historical source links intact", async () => {
     await command(MAKER, "archive.register", { taskId: "task-1", projectVersionId: `eng-${SECRET}-1` });
-    await command(LEAD, "archive.register", { taskId: "task-2", projectVersionId: `eng-${SECRET}-2` });
-    const [a, b] = [archiveOf("task-1")!.id, archiveOf("task-2")!.id];
-    const fresh = confirmed({ "scene-a": a, "scene-b": b });
-    await rejectsCode(() => command(LEAD, "package.publish", { phase: "storyboard", sources: { "scene-a": a, "scene-b": b } }), "DESERET_ARCHIVE_REQUIRED", /task-1, task-2/);
-    await rejectsCode(() => command(LEAD, "package.publish", { phase: "storyboard", sources: { ...fresh, "scene-a": { ...fresh["scene-a"], sceneVersion: 2 } } }), "DESERET_ARCHIVE_CONFIRMATION_STALE", /scene-a/);
-    await rejectsCode(() => command(LEAD, "package.publish", { phase: "storyboard", sources: { ...fresh, "scene-b": { ...fresh["scene-b"], videoVersionId: "video-old" } } }), "DESERET_ARCHIVE_CONFIRMATION_STALE", /scene-b/);
-    await command(LEAD, "package.publish", { phase: "storyboard", sources: fresh });
+    const archiveId = archiveOf("task-1")!.id;
+    h.db.sqlite.prepare("INSERT INTO deseret_package_sources(id,project_id,package_id,scene_id,scene_version,language_project_id,video_version_id,archive_id,confirmed_by_email,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)")
+      .run("old-source", PROJECT, "old-package", "scene-a", 1, "task-1", "video-a", archiveId, LEAD, "2026-11-20");
+    const workspace = await publish();
+    assert.equal(h.state().stage, "storyboard_review");
+    assert.deepEqual(workspace.packageSources?.map(item => [item.packageId, item.archiveId]), [["old-package", archiveId]]);
   });
 
-  it("blocks publication until every task in the round has a valid archive, naming the missing task", async () => {
-    await rejectsCode(() => publish(), "DESERET_ARCHIVE_REQUIRED", /task-1, task-2/);
-    await command(MAKER, "archive.register", { taskId: "task-1", projectVersionId: `eng-${SECRET}-1` });
-    await rejectsCode(() => publish({ "scene-a": archiveOf("task-1")!.id }), "DESERET_ARCHIVE_REQUIRED", /task-2/);
-    await rejectsCode(() => publish({ "scene-a": archiveOf("task-1")!.id, "scene-b": archiveOf("task-1")!.id }), "DESERET_ARCHIVE_REQUIRED", /task-2/);
+  it("continues to reject a video awaiting internal quality approval", async () => {
+    h.db.sqlite.prepare("UPDATE project_files SET status='uploaded' WHERE id='video-a'").run();
+    await rejectsCode(publish, "DESERET_QUALITY_REQUIRED");
+    assert.equal(h.state().packages.length, 0);
   });
 
-  it("pins one archive per scene at publication; later archives do not change the published round", async () => {
-    await command(MAKER, "archive.register", { taskId: "task-1", projectVersionId: `eng-${SECRET}-1`, nextSteps: SECRET });
-    await command(LEAD, "archive.register", { taskId: "task-2", projectVersionId: `eng-${SECRET}-2` });
-    const [a1, b1] = [archiveOf("task-1")!.id, archiveOf("task-2")!.id];
-    const workspace = await publish({ "scene-a": a1, "scene-b": b1 });
-    const packageId = h.state().packages[0].id;
-    assert.deepEqual(workspace.packageSources?.map(source => [source.packageId, source.sceneId, source.taskId, source.videoVersionId, source.archiveId, source.archiveNumber]).sort(),
-      [[packageId, "scene-a", "task-1", "video-a", a1, 1], [packageId, "scene-b", "task-2", "video-b", b1, 1]]);
-    version(h, "eng-v2", "task-1", "03.project");
-    h.db.sqlite.prepare("UPDATE language_projects SET status='制作中' WHERE project_id=?").run(PROJECT);
-    await command(MAKER, "archive.register", { taskId: "task-1", projectVersionId: "eng-v2" });
-    assert.equal((await h.service.workspace(LEAD, PROJECT)).packageSources?.find(source => source.sceneId === "scene-a")?.archiveId, a1);
-  });
-
-  it("refuses an archive whose files are no longer live, and a task with a pending handover", async () => {
-    await command(MAKER, "archive.register", { taskId: "task-1", projectVersionId: `eng-${SECRET}-1` });
-    await command(LEAD, "archive.register", { taskId: "task-2", projectVersionId: `eng-${SECRET}-2` });
-    const sources = { "scene-a": archiveOf("task-1")!.id, "scene-b": archiveOf("task-2")!.id };
-    h.db.sqlite.prepare("UPDATE project_files SET deleted_at='2026-11-21' WHERE id=?").run(`eng-${SECRET}-2`);
-    await rejectsCode(() => publish(sources), "DESERET_ARCHIVE_REQUIRED", /task-2/);
-    h.db.sqlite.prepare("UPDATE project_files SET deleted_at=NULL WHERE id=?").run(`eng-${SECRET}-2`);
+  it("preserves the pending staffing handover check without an archive", async () => {
     h.db.sqlite.prepare("INSERT INTO handover_records (id,language_project_id,status) VALUES ('h-pending','task-1','pending')").run();
-    await rejectsCode(() => publish(sources), "DESERET_HANDOVER_PENDING", /task-1/);
+    await rejectsCode(publish, "DESERET_HANDOVER_PENDING", /task-1/);
   });
 
   it("keeps every archive detail out of publisher events, transfer tasks, integration state and resends", async () => {
     await command(MAKER, "archive.register", { taskId: "task-1", projectVersionId: `eng-${SECRET}-1`, materialVersionIds: ["voice-1"], nextSteps: SECRET });
     await command(LEAD, "archive.register", { taskId: "task-2", projectVersionId: `eng-${SECRET}-2`, nextSteps: SECRET });
     const archiveIds = [archiveOf("task-1")!.id, archiveOf("task-2")!.id];
-    await publish({ "scene-a": archiveIds[0], "scene-b": archiveIds[1] });
+    await publish();
     // The transfer worker finishes; the jobs worker queues review.published and delivers it; the lead then resends.
     for (const task of h.db.sqlite.prepare("SELECT id,manifest_json FROM deseret_material_tasks WHERE direction='aigc_to_deseret'").all() as { id: string; manifest_json: string }[]) {
       const manifest = JSON.parse(task.manifest_json);
@@ -384,34 +357,18 @@ describe("Deseret editor handovers", () => {
     await rejectsCode(() => command(MAKER, "handover.verify", { handoverId: reassigned, result: "verified" }), "FORBIDDEN");
   });
 
-  it("rechecks newly reported missing work on the selected archive's task at commit", async () => {
-    await command(MAKER, "archive.register", { taskId: "task-1", projectVersionId: `eng-${SECRET}-1` });
-    const archiveId = archiveOf("task-1")!.id;
-    h.db.sqlite.prepare("UPDATE deseret_production_archives SET created_at='2026-11-19' WHERE id=?").run(archiveId);
-    const scenes = h.state().scenes.filter(scene => scene.languageTaskId === "task-1");
-    const { guard } = await packageSourceSelection(h.db, { projectId: PROJECT, packageId: "race", scenes,
-      sources: confirmed({ "scene-a": archiveId }), email: LEAD, now: "2026-11-21" });
+  it("rechecks a pending staffing handover at commit independently of archive history", async () => {
+    const guard = await publicationHandoverGuard(h.db, ["task-1"]);
     const holds = () => (h.db.sqlite.prepare(`SELECT ${guard.sql} AS ok`).get(...guard.values) as { ok: number }).ok;
-    const id = await handOver("emergency");
     assert.equal(holds(), 1);
-    await command(MAKER, "handover.verify", { handoverId: id, result: "missing", notes: "Missing engineering files" });
+    h.db.sqlite.prepare("INSERT INTO handover_records (id,language_project_id,status) VALUES ('another','task-1','pending')").run();
     assert.equal(holds(), 0);
   });
 
-  it("after missing work is reported, publishes only with an archive registered after that handover", async () => {
-    await command(MAKER, "archive.register", { taskId: "task-1", projectVersionId: `eng-${SECRET}-1` });
-    const before = archiveOf("task-1")!.id;
-    h.db.sqlite.prepare("UPDATE deseret_production_archives SET created_at='2026-11-19T00:00:00.000Z' WHERE id=?").run(before);
+  it("accepts older clients' source fields even when the archive no longer exists", async () => {
     const id = await handOver("emergency");
-    await command(MAKER, "handover.verify", { handoverId: id, result: "missing", notes: "Engineering file will not open." });
-    await command(LEAD, "archive.register", { taskId: "task-2", projectVersionId: `eng-${SECRET}-2` });
-    const publish = (archive: string) => command(LEAD, "package.publish", { phase: "storyboard", sources: confirmed({ "scene-a": archive, "scene-b": archiveOf("task-2")!.id }) });
-    // A later staffing change must not clear the first editor's missing-work report.
-    await handOver("batch", "2026-11-21T01:00:00.000Z", "later");
-    await rejectsCode(() => publish(before), "DESERET_ARCHIVE_REQUIRED", /task-1/);
-    version(h, "eng-rebuilt", "task-1", "03.project");
-    await command(MAKER, "archive.register", { taskId: "task-1", projectVersionId: "eng-rebuilt", nextSteps: "Rebuilt; continue from scene 6." });
-    await publish(archiveOf("task-1")!.id);
+    await command(MAKER, "handover.verify", { handoverId: id, result: "missing", notes: "Old source missing" });
+    await command(LEAD, "package.publish", { phase: "storyboard", sources: { "scene-a": { archiveId: "obsolete" } } });
     assert.equal(h.state().stage, "storyboard_review");
   });
 });

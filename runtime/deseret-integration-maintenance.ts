@@ -4,7 +4,7 @@ import { deseretServiceProjectContext, productionStagingBucket, uploadProjectFil
 import { businessScopes, withBusinessOperation } from "../db/business-deletion";
 import { guardedMutation } from "../db/mutation-guard";
 import { parseIntegrationConfig, readDeliveryAcknowledgement, readReceiptConfirmation, receiptLookupRequest, resolveIntegrationEndpoint, signIntegrationRequest, type HandoffMaterial } from "../lib/deseret-integration-contract";
-import { createDeseretMaterialTransfer, readMaterialTransferConfig } from "./deseret-material-transfer";
+import { createDeseretMaterialTransfer, materialTransferBudget, readMaterialTransferConfig } from "./deseret-material-transfer";
 import { nativeIntegrationFiles } from "../db/deseret-integration-runtime";
 import { reusableIncomingVersion } from "../db/deseret-native-files";
 import { storedUploadFile } from "./verified-upload";
@@ -19,11 +19,16 @@ export function startDeseretIntegrationMaintenance() {
   const config = parseIntegrationConfig();
   if (!config.enabled) return () => {};
   const db = workflowSubmissionDatabase();
-  const transfer = createDeseretMaterialTransfer();
+  const transferConfig = readMaterialTransferConfig();
+  const transfer = createDeseretMaterialTransfer(transferConfig);
   const jobs = createDeseretIntegrationJobs({
     db,
     async projectAuthority(projectId) { return (await deseretServiceProjectContext(projectId, "projects.manage")).access; },
+    // Relay transfers use a short renewed lease and, with the relay's two execution slots, two projects at a time.
+    transferBudget: size => materialTransferBudget(size, transferConfig.strategy),
+    materialConcurrency: transferConfig.strategy === "deseret_relay" ? 2 : 1,
     planTransfer: input => transfer.planTransfer(input),
+    abortTransfer: (input, plan) => transfer.abortTransfer(input, plan),
     transferFile: (input, plan) => transfer.transferFile(input, plan),
     async sourceReceipt(projectId, file) {
       const context = await deseretServiceProjectContext(projectId, "projects.manage");
@@ -149,9 +154,9 @@ export function startDeseretIntegrationMaintenance() {
     report(error) {
       const failures = error instanceof AggregateError ? error.errors : [error];
       console.error({ event: "deseret.integration_maintenance_failed", at: new Date().toISOString(), failures: failures.map(item => ({
-        stage: ["materials", "reconcile", "outbox"].includes(item?.stage) ? item.stage : "maintenance",
+        stage: ["cleanup", "materials", "reconcile", "outbox"].includes(item?.stage) ? item.stage : "maintenance",
         projectId: typeof item?.projectId === "string" && /^[a-zA-Z0-9-]{1,64}$/.test(item.projectId) ? item.projectId : undefined,
-        code: ["ACCESS_DENIED", "FORBIDDEN", "STALE_RECORD", "DESERET_OWNER_UNAVAILABLE", "BUSINESS_OPERATION_BLOCKED", "OPERATION_ABORTED"].includes(item?.code) ? item.code : "OPERATION_FAILED",
+        code: ["ACCESS_DENIED", "FORBIDDEN", "STALE_RECORD", "DESERET_OWNER_UNAVAILABLE", "BUSINESS_OPERATION_BLOCKED", "OPERATION_ABORTED", "TRANSFER_RETRY", "TRANSFER_SOURCE_CHANGED", "SOURCE_NOT_AUTHORIZED", "TRANSFER_NOT_CONFIGURED", "TRANSFER_PLAN_MISMATCH"].includes(item?.code) ? item.code : "OPERATION_FAILED",
       })) });
     },
   });

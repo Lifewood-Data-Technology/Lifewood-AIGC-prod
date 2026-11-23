@@ -1,10 +1,10 @@
 import { deseretHandoverFiles } from "./deseret-handover-files";
 import { finalSubmissionEvidenceSql } from "./deseret-final-provenance";
-import { isStoryboardFileVersion, scopeDeseretReview } from "../lib/deseret-workspace";
+import { archiveClosedStatuses, isStoryboardFileVersion, scopeDeseretReview } from "../lib/deseret-workspace";
 import { createHash, randomUUID } from "node:crypto";
 import type { Database, DatabaseStatement } from "./database";
 import { guardedMutation } from "./mutation-guard";
-import { archiveCandidates, archiveSelection, packageSources, packageSourceSelection, taskArchives, taskHandovers } from "./deseret-production-archive";
+import { archiveCandidates, archiveSelection, packageSources, publicationHandoverGuard, taskArchives, taskHandovers } from "./deseret-production-archive";
 import { productionReadableVersionQuery } from "./production-file-access";
 import { prepareAuditStatement } from "./audit-write";
 import { PublicError } from "../lib/security-controls";
@@ -48,8 +48,6 @@ export type IntegrationDependencies = {
 const identity = /^[A-Za-z0-9_-]{1,120}$/;
 const text = (value: unknown, maximum = 2000): value is string => typeof value === "string" && value.length <= maximum;
 const object = (value: unknown): value is Row => Boolean(value && typeof value === "object" && !Array.isArray(value));
-/** Language task statuses in which internal archives cannot be registered. */
-const archiveClosedStatuses = ["待分配", "待补充资料", "已暂停", "已交付", "已归档", "已终止"];
 function reject(message: string, code = "DESERET_INVALID", status = 400): never { throw new PublicError(message, status, code); }
 function initialState(materialsReady = false): DeseretIntegrationState {
   return { stage: "intake", intake: "pending", revision: 1, materials: materialsReady ? "ready" : "waiting_transfer", scenes: [], packages: [], feedback: [], authorFeedback: [], revisionSceneIds: [] };
@@ -517,7 +515,7 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
     if (role === "lead" && state.stage !== "archived") {
       if (state.intake === "pending") actions.push("intake.accept");
       if (!state.packages.length) actions.push("intake.requestSupplement");
-      if (state.materials !== "ready" || await db.prepare("SELECT id FROM deseret_material_tasks WHERE project_id=? AND source_revision=? AND state IN ('failed','waiting_config') LIMIT 1").bind(projectId, row.source_revision).first()) actions.push("materials.retry");
+      if (await db.prepare("SELECT id FROM deseret_material_tasks WHERE project_id=? AND source_revision=? AND state IN ('failed','waiting_config') AND COALESCE(last_error,'')<>'TRANSFER_SOURCE_CHANGED' LIMIT 1").bind(projectId, row.source_revision).first()) actions.push("materials.retry");
       if (state.intake === "accepted" && ["production", "final_production"].includes(state.stage) && state.materials === "ready") actions.push("package.publish");
       if (state.packages.some(pack => !pack.withdrawn) && !state.deliveryLocked && !["已交付", "已归档", "已终止"].includes(String(context.project.status))) actions.push("package.withdraw");
       if (state.stage === "revision") actions.push("revision.assign");
@@ -622,7 +620,9 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
       extra.push(db.prepare("UPDATE deseret_material_tasks SET state='paused',updated_at=? WHERE project_id=? AND direction='deseret_to_aigc' AND state<>'ready'").bind(at, projectId));
       extra.push(deseretOutboxStatement(db, projectId, String(row.deseret_project_id), String(row.source_revision), "intake.supplement_requested", { note: state.supplementNote, submissionVersion: Number(row.submission_version) }, at));
     } else if (input.action === "materials.retry") {
-      extra.push(db.prepare("UPDATE deseret_material_tasks SET state='pending',last_error=NULL,next_attempt_at=?,updated_at=? WHERE project_id=? AND source_revision=? AND state IN ('failed','waiting_config')").bind(at, at, projectId, row.source_revision));
+      // A changed source identity stays stopped: the lead requests a supplement (incoming) or withdraws and republishes
+      // (outgoing), and the new revision creates new tasks. Retrying must not silently accept changed bytes.
+      extra.push(db.prepare("UPDATE deseret_material_tasks SET state='pending',last_error=NULL,next_attempt_at=?,updated_at=? WHERE project_id=? AND source_revision=? AND state IN ('failed','waiting_config') AND COALESCE(last_error,'')<>'TRANSFER_SOURCE_CHANGED'").bind(at, at, projectId, row.source_revision));
       if (state.materials !== "ready") state.materials = "waiting_transfer";
     } else if (input.action === "outbox.retry") {
       extra.push(db.prepare("UPDATE deseret_outbox SET state='pending',next_attempt_at=?,last_error=NULL,updated_at=? WHERE project_id=? AND state='failed'").bind(at, at, projectId));
@@ -736,12 +736,9 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
       if (characters.length !== selectedIds.size) reject("Update the scene characters before publishing.", "DESERET_SCENE_CHARACTER_INVALID", 422);
       const pack: DeseretReviewPackage = { characters, id: randomUUID(), phase: phase as "storyboard" | "final", version, publicationId: randomUUID(), publishedAt: at, scenes, files: packageFiles, filesReady: false };
       if (Buffer.byteLength(JSON.stringify({ scenes, files: packageFiles }), "utf8") > 850000) reject("The publication metadata exceeds the service request limit.", "DESERET_PACKAGE_TOO_LARGE", 413);
-      // Pin a valid internal archive to every scene of this round. The pinned sources live only in AIGC's own
-      // table; the package, its outbox event and its transfer tasks carry none of it.
-      const sources = await packageSourceSelection(db, { projectId, packageId: pack.id, scenes, sources: payload.sources, email, now: at });
-      extra.push(...sources.statements);
-      writeGuards.push(sources.guard.sql);
-      writeValues.push(...sources.guard.values);
+      const handoverGuard = await publicationHandoverGuard(db, scenes.map(scene => scene.languageTaskId));
+      writeGuards.push(handoverGuard.sql);
+      writeValues.push(...handoverGuard.values);
       state.packages.push(pack);
       state.stage = phase === "final" ? "final_review" : "storyboard_review";
       state.revisionSceneIds = [];

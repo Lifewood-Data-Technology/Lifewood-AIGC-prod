@@ -86,17 +86,15 @@ describe("native archive upload", () => {
     } finally { await unmount(); meta.remove(); }
   });
 
-  it("offers the archive shortcut in the scene submission dialog", async () => {
+  it("keeps archive registration out of the scene submission dialog", async () => {
     serve("制作中");
     const { host, unmount } = await mount();
     try {
       await act(async () => { open(TASK, "final"); });
       await settle();
-      const shortcut = [...host.querySelectorAll("button")].find(item => /登记内部留档/.test(item.textContent ?? ""));
-      assert.ok(shortcut, "shortcut shown");
-      await act(async () => { (shortcut as HTMLElement).click(); });
-      await settle();
-      assert.ok(host.querySelector("[data-section='archive-upload']"), "the archive form opened");
+      const shortcut = [...host.querySelectorAll("button")].find(item => /工程留档/.test(item.textContent ?? ""));
+      assert.equal(shortcut, undefined);
+      assert.equal(host.querySelector("[data-section='archive-upload']"), null);
     } finally { await unmount(); }
   });
 
@@ -121,7 +119,7 @@ describe("native archive upload", () => {
       await settle();
       assert.deepEqual([posts[0].kind, posts[0].archiveProjectVersionId, posts[0].archivePreviewVersionId, posts[0].nextSteps, posts[0].fileIds],
         ["archive", "eng-1", "prev-1", "Continue from scene 9", JSON.stringify(["eng-1", "prev-1"])]);
-      assert.match(host.textContent ?? "", /内部留档/);
+      assert.match(host.textContent ?? "", /工程已留档/);
     } finally { await unmount(); }
   });
 

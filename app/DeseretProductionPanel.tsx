@@ -6,8 +6,7 @@ import { isStoryboardFileVersion, scopeDeseretReview, type DeseretScene, type De
 import { approvedSceneCharacters } from "../lib/deseret-producer-brief";
 import DeseretProducerBrief, { DeseretBriefFiles } from "./DeseretProducerBrief";
 import SelectControl from "./SelectControl";
-import DeseretArchivePanel, { usableArchives } from "./DeseretArchivePanel";
-import { openProductionWorkspace } from "./ProductionWorkspace";
+import DeseretArchivePanel from "./DeseretArchivePanel";
 import { MenuIcon } from "./MenuIcon";
 import { LogIcon } from "./AdminLogControls";
 
@@ -19,7 +18,6 @@ const copy = {
       "The production handoff could not be loaded. Check access and retry.",
     retry: "Retry",
     intake: "Intake",
-    materials: "Publisher attachments",
     accept: "Accept project",
     supplement: "Request additional information",
     note: "Review note",
@@ -53,9 +51,6 @@ const copy = {
     pending: "Pending",
     accepted: "Accepted",
     needsSupplement: "Additional information required",
-    waiting_transfer: "Awaiting attachments",
-    ready: "Received",
-    failed: "Some attachments are unavailable",
     reviewed: "Reviewed",
     revision_requested: "Final revision requested",
     approved: "Approved",
@@ -66,7 +61,6 @@ const copy = {
     error: "暂时无法读取制作交接，请检查权限后重试。",
     retry: "重试",
     intake: "项目受理",
-    materials: "出版社附件",
     accept: "接受项目",
     supplement: "要求补充资料",
     note: "审核说明",
@@ -100,9 +94,6 @@ const copy = {
     pending: "待处理",
     accepted: "已接受",
     needsSupplement: "待补充资料",
-    waiting_transfer: "等待附件到齐",
-    ready: "已收到",
-    failed: "有附件暂不可用",
     reviewed: "已阅",
     revision_requested: "已要求成片返修",
     approved: "已批准",
@@ -179,10 +170,6 @@ function DeseretProductionState({
   const [reload, setReload] = useState(0);
   const [note, setNote] = useState("");
   const [finalFileVersionId, setFinalFileVersionId] = useState("");
-  // The lead's explicit per-scene archive confirmations (keyed by round, scene, version and video), and the
-  // per-task archive offered by "apply to all scenes of this task".
-  const [archiveChoice, setArchiveChoice] = useState<Record<string, string>>({});
-  const [taskApply, setTaskApply] = useState<Record<string, string>>({});
   const [finalDuration, setFinalDuration] = useState("");
   const intake = data?.intake;
   const stage = data?.stage;
@@ -331,7 +318,7 @@ function DeseretProductionState({
     (data.stage === "revision" && data.packages.at(-1)?.phase === "final")
       ? "final"
       : "storyboard";
-  const status = (value: DeseretStage | DeseretWorkspace["intake"] | DeseretWorkspace["materials"]) =>
+  const status = (value: DeseretStage | DeseretWorkspace["intake"]) =>
     value === "intake" ? c.intakeStage : c[value];
   const finalFiles = data.fileCandidates.filter(file =>
     file.finalSubmission === true && file.mimeType.startsWith("video/") &&
@@ -352,29 +339,6 @@ function DeseretProductionState({
       : unapprovedScenes.length
         ? (zh ? `尚有 ${unapprovedScenes.length} 个分镜缺少就绪且通过质检的视频版本。` : `${unapprovedScenes.length} scene(s) still need a ready, quality-approved video version.`)
         : "";
-  // Publication gate: the lead explicitly confirms an internal archive for every scene (video) of the round. A
-  // confirmation is keyed by round, scene, version and video, so a new round, video or version needs a new one;
-  // nothing is applied without the lead's action. One archive may be applied to all scenes of a task at once.
-  const taskLabel = (task: string) => data.tasks.find(item => item.id === task)?.language ?? task;
-  const finalVersion = (task: string) => 1 + data.packages.filter(pack => pack.phase === "final" && pack.files.some(file => file.languageTaskId === task)).length;
-  const roundScenes = phase === "final"
-    ? (latestFinal ? [{ id: `final-${latestFinal.languageTaskId}`, languageTaskId: latestFinal.languageTaskId, version: finalVersion(latestFinal.languageTaskId), fileVersionId: latestFinal.id, label: c.final }] : [])
-    : data.scenes.map(scene => ({ id: scene.id, languageTaskId: scene.languageTaskId, version: scene.version, fileVersionId: scene.fileVersionId, label: `${c.scene} ${scene.order}` }));
-  type RoundScene = (typeof roundScenes)[number];
-  const roundTasks = [...new Set(roundScenes.map(scene => scene.languageTaskId))];
-  // The round: this project and source revision, the phase, and how many packages of that phase were already
-  // published. A published round ends its confirmations, so a returned round asks again even for unchanged videos.
-  const round = `${projectId}|${data.sourceRevision}|${phase}|${data.packages.filter(pack => pack.phase === phase).length}`;
-  const confirmKey = (scene: RoundScene) => `${round}|${scene.id}|${scene.version}|${scene.fileVersionId}`;
-  const confirmedArchive = (scene: RoundScene) => usableArchives(data, scene.languageTaskId).find(archive => archive.id === archiveChoice[confirmKey(scene)]);
-  const archiveGaps = roundTasks.filter(task => !usableArchives(data, task).length).map(taskLabel);
-  const unconfirmed = roundScenes.filter(scene => usableArchives(data, scene.languageTaskId).length && !confirmedArchive(scene));
-  const gateReason = publishReason || (archiveGaps.length ? `${zh ? "缺少有效内部留档：" : "Internal archive missing: "}${archiveGaps.join(", ")}`
-    : unconfirmed.length ? `${zh ? "请确认以下镜头的内部留档：" : "Confirm the internal archive for: "}${unconfirmed.map(scene => scene.label).join(", ")}` : "");
-  const sources = Object.fromEntries(roundScenes.map(scene => [scene.id, { archiveId: confirmedArchive(scene)?.id ?? "", sceneVersion: scene.version, videoVersionId: scene.fileVersionId }]));
-  const videoName = (scene: RoundScene) => data.fileCandidates.find(file => file.id === scene.fileVersionId)?.name ?? scene.fileVersionId;
-  const archiveOptions = (task: string) => usableArchives(data, task).map(archive =>
-    <option key={archive.id} value={archive.id}>#{archive.number} · {archive.projectVersion.name} v{archive.projectVersion.version}</option>);
   return (
     <section className="deseret-production-panel" data-role={data.role}>
       <header className="deseret-project-heading">
@@ -386,10 +350,9 @@ function DeseretProductionState({
       {commandError && <p role="alert">{commandError === "character"
         ? (zh ? "镜头中的人物与已批准资料不一致。请重新选择出场人物并保存镜头。" : "The scene cast differs from the approved brief. Select the characters again and save the scene.")
         : (zh ? "操作尚未确认，请核对当前状态后重试。" : "The action was not confirmed. Check the current status and retry.")}</p>}
-      <dl className="deseret-production-facts">
-        {(data.role === "lead" || data.intake !== "accepted") && <div data-status={data.intake}><dt>{c.intake}</dt><dd>{status(data.intake)}</dd></div>}
-        <div data-status={data.materials}><dt>{c.materials}</dt><dd>{data.materialManifest.length ? status(data.materials) : zh ? "本版无附件" : "No attachments in this version"}</dd></div>
-      </dl>
+      {(data.role === "lead" || data.intake !== "accepted") && (
+        <dl className="deseret-production-facts"><div data-status={data.intake}><dt>{c.intake}</dt><dd>{status(data.intake)}</dd></div></dl>
+      )}
       {data.supplementNote && <blockquote>{data.supplementNote}</blockquote>}
       <div className="deseret-brief-layout">
       <DeseretProducerBrief brief={data.brief} files={data.materialManifest} locale={locale} leadView={data.role === "lead"} />
@@ -457,34 +420,10 @@ function DeseretProductionState({
         </section>
       )}
       {data.role !== "qc" && data.archives && (
-        <DeseretArchivePanel data={data} taskId={taskId} locale={locale} busy={busy} command={command}
-          onUpload={task => openProductionWorkspace(task, "materials", undefined, undefined, undefined, { archive: true })} />
+        <DeseretArchivePanel data={data} taskId={taskId} locale={locale} busy={busy} command={command} />
       )}
       {can("package.publish") && (
         <section className="pm-detail-card">
-          {roundTasks.map(task => (
-            <fieldset key={task} className="deseret-archive-gate">
-              <legend>{zh ? "内部留档" : "Internal archive"} · {taskLabel(task)}</legend>
-              <div data-task-apply={task}>
-                <SelectControl locale={locale} name={`apply-archive-${task}`} value={taskApply[task] ?? ""} onChange={event => setTaskApply({ ...taskApply, [task]: event.target.value })}>
-                  <option value="">{zh ? "选择留档" : "Choose an archive"}</option>
-                  {archiveOptions(task)}
-                </SelectControl>
-                <button type="button" disabled={busy || !usableArchives(data, task).some(archive => archive.id === taskApply[task])}
-                  onClick={() => setArchiveChoice({ ...archiveChoice, ...Object.fromEntries(roundScenes.filter(scene => scene.languageTaskId === task).map(scene => [confirmKey(scene), taskApply[task]])) })}>
-                  {zh ? "应用到本任务全部镜头" : "Apply to all scenes of this task"}
-                </button>
-              </div>
-              {roundScenes.filter(scene => scene.languageTaskId === task).map(scene => (
-                <label key={scene.id} data-scene-confirm={scene.id}>{scene.label} · v{scene.version} · {videoName(scene)}
-                  <SelectControl locale={locale} name={`confirm-archive-${scene.id}`} value={confirmedArchive(scene)?.id ?? ""} onChange={event => setArchiveChoice({ ...archiveChoice, [confirmKey(scene)]: event.target.value })}>
-                    <option value="">{zh ? "请确认留档" : "Confirm an archive"}</option>
-                    {archiveOptions(task)}
-                  </SelectControl>
-                </label>
-              ))}
-            </fieldset>
-          ))}
           {phase === "final" && (
             <>
               <label>
@@ -522,7 +461,7 @@ function DeseretProductionState({
               label={`${c.publish} · ${phase === "final" ? c.final : c.storyboard}`}
               icon="previews"
               busy={busy}
-              reason={gateReason}
+              reason={publishReason}
               onClick={() =>
                 void command(
                   "package.publish",
@@ -531,9 +470,8 @@ function DeseretProductionState({
                         phase,
                         fileVersionId: finalFileVersionId,
                         duration: Number(finalDuration),
-                        sources,
                       }
-                    : { phase, sources },
+                    : { phase },
                 ).catch(() => {})
               }
             />

@@ -1,12 +1,13 @@
 "use client";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { leadIntakeSummary, producerBriefSections, type BriefFile, type BriefRow } from "../lib/deseret-producer-brief";
 import { downloadFileSet } from "../lib/browser-downloads";
 import { LogIcon } from "./AdminLogControls";
+import { ChevronIcon } from "./ControlIcons";
 import { MenuIcon } from "./MenuIcon";
 import DeseretBriefMedia, { briefMediaKind } from "./DeseretBriefMedia";
 
-export function DeseretBriefFiles({files, visible, locale}: {files: BriefFile[]; visible: boolean; locale: "zh" | "en"}) {
+export function DeseretBriefFiles({files, visible, locale, receiptList = false}: {receiptList?: boolean; files: BriefFile[]; visible: boolean; locale: "zh" | "en"}) {
   const [downloading, setDownloading] = useState("");
   const [failed, setFailed] = useState(false);
   const zh = locale === "zh";
@@ -31,7 +32,8 @@ export function DeseretBriefFiles({files, visible, locale}: {files: BriefFile[];
     const kind = visible && downloadable ? briefMediaKind(file) : null;
     return <li key={`${file.id}:${index}`} data-media={kind || undefined}>
       {kind && file.nativeVersionId && <div className="deseret-file-preview"><DeseretBriefMedia key={file.nativeVersionId} kind={kind} version={file.nativeVersionId} name={file.name} zh={zh} /></div>}
-      <MenuIcon name="library" /><span>{file.name}{!downloadable && ` · ${status}`}</span>
+      <MenuIcon name="library" /><span className="brief-file-name">{file.name}{!receiptList && !downloadable && ` · ${status}`}</span>
+      {receiptList && !downloadable && <small>{receiptStatus(file.state, zh)}</small>}
       {downloadable && (
         <button type="button" className="icon-button" disabled={Boolean(downloading)} aria-busy={downloading === file.id || undefined}
           title={label} aria-label={label} onClick={() => void download(file)}>
@@ -42,9 +44,20 @@ export function DeseretBriefFiles({files, visible, locale}: {files: BriefFile[];
   }
 
   return <>
-    <ul className="deseret-brief-files">{files.map((file, index) => renderFile(file, index, visible))}</ul>
+    <ul className={receiptList ? "brief-receipts" : "deseret-brief-files"}>{files.map((file, index) => renderFile(file, index, visible))}</ul>
     {failed && <p role="alert">{zh ? "文件暂时无法下载，请刷新后重试。" : "The file could not be downloaded. Refresh and retry."}</p>}
   </>;
+}
+
+function receiptStatus(state: BriefFile["state"], zh: boolean) {
+  switch (state) {
+    case "pending": return zh ? "待同步" : "Queued";
+    case "running": return zh ? "同步中" : "Transferring";
+    case "waiting_config": return zh ? "同步受阻" : "Transfer blocked";
+    case "failed": return zh ? "同步失败" : "Transfer failed";
+    case "paused": return zh ? "已暂停" : "Paused";
+    default: return zh ? "暂不可用" : "Unavailable";
+  }
 }
 
 export default function DeseretProducerBrief({ brief, files, locale, leadView = false }: {
@@ -70,9 +83,26 @@ export default function DeseretProducerBrief({ brief, files, locale, leadView = 
     </div>)}</dl>;
   }
 
+  const [receiptsOpen, setReceiptsOpen] = useState(false);
+  const receiptId = useId();
+  const received = files.filter(file => file.state === "ready").length;
+  const blocked = files.some(file => file.state === "failed" || file.state === "waiting_config");
+  const receiptTone = blocked ? "attention" : received === files.length ? "complete" : "pending";
+  const count = `${received}/${files.length}`;
+  const receiptText = zh ? `已收 ${count}` : `${count} received`;
   const title = zh ? "已批准制作资料" : "Approved production brief";
   return <section className="pm-detail-card deseret-producer-brief" aria-label={title}>
-    <h4>{title}</h4>
+    <header className="brief-heading">
+      <h4>{title}</h4>
+      {files.length ? <button type="button" className="brief-receipt-toggle" data-tone={receiptTone} aria-expanded={receiptsOpen}
+        aria-controls={receiptId} onClick={() => setReceiptsOpen(!receiptsOpen)}>
+        <span>{zh ? "出版社附件" : "Publisher files"}</span>
+        <span className="brief-receipt-count">{receiptText}{blocked && (zh ? " · 需处理" : " · Needs attention")}</span><ChevronIcon />
+      </button> : <span className="brief-no-files">{zh ? "本版无附件" : "No attachments in this version"}</span>}
+    </header>
+    <div id={receiptId} className="brief-receipt-list" hidden={!receiptsOpen || !files.length}>
+      {receiptsOpen && <DeseretBriefFiles files={files} visible={false} locale={locale} receiptList />}
+    </div>
     {hasOverview && overview && <section className="deseret-intake-summary">
       <h5>{zh ? "接单要点" : "Production at a glance"}</h5>
       {overview.facts.length > 0 && renderRows(overview.facts, true, "deseret-intake-facts")}

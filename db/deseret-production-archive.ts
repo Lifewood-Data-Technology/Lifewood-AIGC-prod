@@ -5,8 +5,7 @@ import { randomUUID } from "node:crypto";
 import type { Database, DatabaseStatement } from "./database";
 import { liveLogicalFileSql } from "./file-integrity";
 import { PublicError } from "../lib/security-controls";
-import { publishableArchive } from "../lib/deseret-workspace";
-import type { DeseretArchive, DeseretArchiveCandidate, DeseretArchiveFile, DeseretPackageSource, DeseretScene, DeseretTaskHandover } from "../lib/deseret-workspace";
+import type { DeseretArchive, DeseretArchiveCandidate, DeseretArchiveFile, DeseretPackageSource, DeseretTaskHandover } from "../lib/deseret-workspace";
 
 type Row = Record<string, unknown>;
 /**
@@ -173,50 +172,13 @@ export async function packageSources(db: Database, projectId: string): Promise<D
       taskId: String(row.language_project_id), videoVersionId: String(row.video_version_id), archiveId: String(row.archive_id), archiveNumber: Number(row.archive_number) }));
 }
 
-/**
- * The publication gate. Every scene of the package needs a valid archive of its own task. A task with a pending
- * native handover cannot be published. After a handover verified as "missing", only an archive registered after
- * that handover counts. Returns the pinned-source rows and a guard that re-checks archive files and handovers in
- * the publish transaction. Errors name the language tasks so the lead can complete them at the gate.
- */
-export async function packageSourceSelection(db: Database, input: { projectId: string; packageId: string; scenes: DeseretScene[]; sources: unknown; email: string; now: string }) {
-  const sources = input.sources && typeof input.sources === "object" && !Array.isArray(input.sources) ? input.sources as Record<string, unknown> : {};
-  const taskIds = [...new Set(input.scenes.map(scene => scene.languageTaskId))];
-  const pending = (await db.prepare("SELECT DISTINCT language_project_id FROM handover_records WHERE status='pending' AND language_project_id IN (SELECT value FROM json_each(?))")
-    .bind(JSON.stringify(taskIds)).all<Row>()).results.map(row => String(row.language_project_id));
-  if (pending.length) throw new PublicError(`Resolve the pending handover before publishing language task(s): ${pending.sort().join(", ")}.`, 409, "DESERET_HANDOVER_PENDING");
-  const archives = new Map((await taskArchives(db, input.projectId, taskIds)).map(archive => [archive.id, archive]));
-  const handovers = await taskHandovers(db, input.projectId, taskIds);
-  // Each scene needs the lead's explicit confirmation { archiveId, sceneVersion, videoVersionId } of its current
-  // version and video; a confirmation made for an earlier version or video is stale and never carried over.
-  const confirmation = (sceneId: string) => {
-    const value = sources[sceneId];
-    return value && typeof value === "object" && !Array.isArray(value) && typeof (value as Row).archiveId === "string" ? value as { archiveId: string; sceneVersion?: unknown; videoVersionId?: unknown } : undefined;
-  };
-  const missingTasks = new Set<string>(), staleScenes: string[] = [];
-  for (const scene of input.scenes) {
-    const confirmed = confirmation(scene.id);
-    const archive = confirmed ? archives.get(confirmed.archiveId) : undefined;
-    if (!archive || archive.taskId !== scene.languageTaskId || !publishableArchive(archive, handovers)) missingTasks.add(scene.languageTaskId);
-    else if (confirmed!.sceneVersion !== scene.version || confirmed!.videoVersionId !== scene.fileVersionId) staleScenes.push(scene.id);
-  }
-  if (missingTasks.size) throw new PublicError(`Choose a valid internal production archive for language task(s): ${[...missingTasks].sort().join(", ")}.`, 409, "DESERET_ARCHIVE_REQUIRED");
-  if (staleScenes.length) throw new PublicError(`Confirm the internal archive again for scene(s): ${staleScenes.join(", ")}.`, 409, "DESERET_ARCHIVE_CONFIRMATION_STALE");
-  const archiveIds = [...new Set(input.scenes.map(scene => confirmation(scene.id)!.archiveId))];
-  return {
-    statements: input.scenes.map(scene => db.prepare("INSERT INTO deseret_package_sources(id,project_id,package_id,scene_id,scene_version,language_project_id,video_version_id,archive_id,confirmed_by_email,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)")
-      .bind(randomUUID(), input.projectId, input.packageId, scene.id, scene.version, scene.languageTaskId, scene.fileVersionId, confirmation(scene.id)!.archiveId, input.email, input.now)),
-    guard: {
-      sql: `NOT EXISTS(SELECT 1 FROM deseret_archive_files af WHERE af.archive_id IN (SELECT value FROM json_each(?)) AND NOT EXISTS(${liveVersionSql("v.id=af.file_version_id", "af.language_project_id", "?")}))
-        AND NOT EXISTS(SELECT 1 FROM deseret_production_archives a JOIN deseret_task_handovers h
-          ON h.project_id=a.project_id AND h.language_project_id=a.language_project_id
-          WHERE a.id IN (SELECT value FROM json_each(?)) AND h.verification='missing' AND a.created_at<h.created_at)
-        AND NOT EXISTS(SELECT 1 FROM handover_records WHERE status='pending' AND language_project_id IN (SELECT value FROM json_each(?)))
-        AND NOT EXISTS(SELECT 1 FROM deseret_archive_files af JOIN aigc_file_versions v ON v.id=af.file_version_id JOIN aigc_files f ON f.id=v.file_id JOIN aigc_folders folder ON folder.id=f.folder_id
-          WHERE af.archive_id IN (SELECT value FROM json_each(?)) AND af.role='project' AND folder.folder_code<>'${ENGINEERING_FOLDER}')`,
-      values: [JSON.stringify(archiveIds), input.projectId, input.projectId, JSON.stringify(archiveIds), JSON.stringify(taskIds), JSON.stringify(archiveIds)],
-    },
-  };
+/** A native staffing handover in progress still freezes publication of its tasks. */
+export async function publicationHandoverGuard(db: Database, taskIds: string[]) {
+  const values = [JSON.stringify([...new Set(taskIds)])];
+  const pending = "SELECT language_project_id FROM handover_records WHERE status='pending' AND language_project_id IN (SELECT value FROM json_each(?))";
+  const rows = (await db.prepare(pending).bind(...values).all<Row>()).results;
+  if (rows.length) throw new PublicError(`Resolve the pending handover before publishing language task(s): ${rows.map(row => row.language_project_id).sort().join(", ")}.`, 409, "DESERET_HANDOVER_PENDING");
+  return { sql: `NOT EXISTS(${pending})`, values };
 }
 
 /** The newest valid archive of a task, or null. */

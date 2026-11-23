@@ -1,0 +1,26 @@
+[Unit]
+Description=Deseret cross-region file transfer worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lifewood-portal
+Group=lifewood-portal
+WorkingDirectory=/opt/lifewood-deseret-transfer
+Environment=DESERET_RELAY_ENV_FILE=/etc/lifewood-book-portal/transfer.env
+ExecStart=/usr/bin/node cli.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=130
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+MemoryMax=384M
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+ProtectHome=true
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target

@@ -192,15 +192,12 @@ export type DeseretArchive = {
   projectVersion: DeseretArchiveFile; preview?: DeseretArchiveFile; materials: DeseretArchiveFile[];
   nextSteps: string; valid: boolean; missing: string[];
 };
+/** Language task statuses in which internal archives cannot be registered. */
+export const archiveClosedStatuses = ["待分配", "待补充资料", "已暂停", "已交付", "已归档", "已终止"];
+
 export type DeseretArchiveCandidate = { id: string; name: string; version: number; taskId: string; kind: "project" | "video" | "material" };
 export type DeseretTaskHandover = {
   id: string; taskId: string; kind: "planned" | "emergency" | "batch"; from: string; to: string; archiveId?: string;
   verification: "pending" | "verified" | "missing"; notes: string; verifiedAt?: string; createdAt: string;
 };
-/** A subsequent staffing change does not clear a missing-work report on the same task. */
-export function publishableArchive(archive: DeseretArchive, handovers: DeseretTaskHandover[]) {
-  return archive.valid && !handovers.some(handover => handover.taskId === archive.taskId &&
-    handover.verification === "missing" && archive.createdAt < handover.createdAt);
-}
-
 export type DeseretPackageSource = { packageId: string; sceneId: string; sceneVersion: number; taskId: string; videoVersionId: string; archiveId: string; archiveNumber: number };

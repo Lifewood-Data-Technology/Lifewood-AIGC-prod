@@ -1,7 +1,4 @@
-// Renders the real Deseret production panel in jsdom against the real integration service: the internal archive
-// section (editor and lead), the publication gate's per-task archive choice, and the incoming editor's handover
-// verification. Quality reviewers see none of it. Boolean DOM assertions only (a failed deep diff of a DOM node
-// walks React's fiber graph).
+// Exercises the producer and lead screens against the integration service, including historical records and handovers.
 import { after, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { createRequire, register } from "node:module";
@@ -85,35 +82,12 @@ async function mount(email: string, locale: "zh" | "en", taskId?: string) {
 }
 const section = (host: Element) => host.querySelector("[data-section='deseret-archive']");
 const button = (root: Element | null, text: RegExp) => [...(root?.querySelectorAll("button") ?? [])].find(item => text.test(item.textContent ?? ""));
-const archiveForm = (host: Element) => host.querySelector("[data-section='deseret-archive'] form") as HTMLFormElement;
-/** Registers an archive from existing files through the panel form. */
-async function registerInPanel(host: Element, task: string, engineering: string) {
-  const form = archiveForm(host);
-  const taskSelect = form.querySelector("select[name='archive-task']") as HTMLSelectElement | null;
-  if (taskSelect) await setValue(taskSelect, task);
-  await setValue(form.querySelector("select[name='archive-project']") as HTMLSelectElement, engineering);
-  await click(form.querySelector("button[type='submit']"));
-}
-
-describe("internal archive section", () => {
-  it("lets the editor archive an existing engineering file with materials and next steps (zh)", async () => {
-    const { host, unmount } = await mount(MAKER, "zh");
+describe("historical archives and handovers", () => {
+  it("shows no archive entry on a new production task", async () => {
+    const { host, unmount } = await mount(MAKER, "zh", "task-1");
     try {
-      assert.ok(section(host), "the archive section is shown");
-      assert.match(section(host)!.textContent ?? "", /内部留档/);
-      const form = archiveForm(host);
-      await setValue(form.querySelector("select[name='archive-project']") as HTMLSelectElement, "eng-1");
-      await click(form.querySelector("input[name='archive-material'][value='voice-1']"));
-      await setValue(form.querySelector("textarea[name='archive-next-steps']") as HTMLTextAreaElement, "从第 9 镜继续");
-      await click(form.querySelector("button[type='submit']"));
-      const payload = posts.at(-1)!.payload as Row;
-      assert.deepEqual([posts.at(-1)!.action, payload.taskId, payload.projectVersionId, payload.materialVersionIds, payload.nextSteps],
-        ["archive.register", "task-1", "eng-1", ["voice-1"], "从第 9 镜继续"]);
-      const record = section(host)!.querySelector("[data-archive-number='1']");
-      assert.ok(record, "the new archive is listed");
-      assert.match(record!.textContent ?? "", /eng-1\.bin/);
-      assert.match(record!.textContent ?? "", /从第 9 镜继续/);
-      assert.ok(button(section(host), /上传工程并留档/), "the upload shortcut is offered to the editor");
+      assert.equal(section(host), null);
+      assert.equal(button(host, /上传工程文件|保存留档/), undefined);
     } finally { await unmount(); }
   });
 
@@ -151,78 +125,23 @@ describe("internal archive section", () => {
 
   it("shows nothing to a quality reviewer", async () => {
     const { host, unmount } = await mount(QC, "en", "task-1");
-    try { assert.ok(!section(host)); assert.doesNotMatch(host.textContent ?? "", /Internal archive/); }
+    try { assert.ok(!section(host)); assert.doesNotMatch(host.textContent ?? "", /Project archive/); }
     finally { await unmount(); }
   });
 });
 
-describe("publication gate", () => {
-  it("names the tasks without a valid archive, lets the lead complete them at the gate, and pins one per scene (en)", async () => {
+describe("publisher review without engineering files", () => {
+  it("lets the lead publish quality-approved scenes without archive confirmations", async () => {
     const { host, unmount } = await mount(LEAD, "en");
     try {
-      const publish = () => button(host, /Publish for publisher review/) as HTMLButtonElement;
-      assert.equal(publish().disabled, true);
-      assert.match(host.textContent ?? "", /Internal archive missing: English, Spanish/);
-      await registerInPanel(host, "task-1", "eng-1");
-      assert.match(host.textContent ?? "", /Internal archive missing: Spanish/);
-      await registerInPanel(host, "task-2", "eng-2");
-      assert.ok(!/Internal archive missing/.test(host.textContent ?? ""));
-      // Nothing is applied on its own: every scene needs an explicit confirmation.
-      assert.equal(publish().disabled, true);
-      assert.match(host.textContent ?? "", /Confirm the internal archive for: Scene 1, Scene 2/);
-      const archives = h.db.sqlite.prepare("SELECT id,language_project_id FROM deseret_production_archives").all() as { id: string; language_project_id: string }[];
-      const of = (task: string) => archives.find(row => row.language_project_id === task)!.id;
-      await setValue(host.querySelector("[data-scene-confirm='scene-a'] select.select-native") as HTMLSelectElement, of("task-1"));
-      assert.match(host.textContent ?? "", /Confirm the internal archive for: Scene 2/);
-      // One click applies a chosen archive to every scene of task-2 (here, its only scene).
-      const apply = host.querySelector("[data-task-apply='task-2']")!;
-      await setValue(apply.querySelector("select.select-native") as HTMLSelectElement, of("task-2"));
-      await click(button(apply, /Apply to all scenes of this task/));
-      assert.equal(publish().disabled, false);
-      await click(publish());
-      const body = posts.at(-1)!;
-      assert.deepEqual([body.action, (body.payload as Row).sources], ["package.publish", {
-        "scene-a": { archiveId: of("task-1"), sceneVersion: 1, videoVersionId: "video-a" },
-        "scene-b": { archiveId: of("task-2"), sceneVersion: 1, videoVersionId: "video-b" } }]);
+      assert.equal(host.querySelector("[data-scene-confirm], [data-task-apply]"), null);
+      const publish = button(host, /Publish for publisher review/)!;
+      assert.equal(publish.disabled, false);
+      await click(publish);
+      const request = posts.at(-1)!;
+      assert.equal(request.action, "package.publish");
+      assert.deepEqual(request.payload, { phase: "storyboard" });
       assert.equal(h.state().stage, "storyboard_review");
-    } finally { await unmount(); }
-  });
-
-  it("asks again in a new round even when a scene keeps exactly the same video", async () => {
-    const { host, unmount } = await mount(LEAD, "en");
-    try {
-      await registerInPanel(host, "task-1", "eng-1");
-      await registerInPanel(host, "task-2", "eng-2");
-      const of = (task: string) => (h.db.sqlite.prepare("SELECT id FROM deseret_production_archives WHERE language_project_id=?").get(task) as { id: string }).id;
-      await setValue(host.querySelector("[data-scene-confirm='scene-a'] select.select-native") as HTMLSelectElement, of("task-1"));
-      await setValue(host.querySelector("[data-scene-confirm='scene-b'] select.select-native") as HTMLSelectElement, of("task-2"));
-      await click(button(host, /Publish for publisher review/));
-      assert.equal(h.state().stage, "storyboard_review", "round 1 published");
-      // The publisher returns the round; no scene or video changes. The panel reloads after the next action.
-      h.db.sqlite.prepare("UPDATE deseret_project_links SET state_json=json_set(state_json,'$.stage','production')").run();
-      await registerInPanel(host, "task-2", "eng-2");
-      assert.match(host.textContent ?? "", /Confirm the internal archive for: Scene 1, Scene 2/, "round 2 needs explicit reuse");
-      assert.equal((button(host, /Publish for publisher review/) as HTMLButtonElement).disabled, true);
-      await setValue(host.querySelector("[data-scene-confirm='scene-a'] select.select-native") as HTMLSelectElement, of("task-1"));
-      assert.match(host.textContent ?? "", /Confirm the internal archive for: Scene 2/, "within the round a confirmation is kept");
-    } finally { await unmount(); }
-  });
-
-  it("drops a confirmation once the scene has a new version or video", async () => {
-    const { host, unmount } = await mount(LEAD, "en");
-    try {
-      await registerInPanel(host, "task-1", "eng-1");
-      await registerInPanel(host, "task-2", "eng-2");
-      const of = (task: string) => (h.db.sqlite.prepare("SELECT id FROM deseret_production_archives WHERE language_project_id=?").get(task) as { id: string }).id;
-      await setValue(host.querySelector("[data-scene-confirm='scene-a'] select.select-native") as HTMLSelectElement, of("task-1"));
-      await setValue(host.querySelector("[data-scene-confirm='scene-b'] select.select-native") as HTMLSelectElement, of("task-2"));
-      assert.ok(!/Confirm the internal archive for/.test(host.textContent ?? ""));
-      // Scene 1 is re-registered with a new video version; the panel reloads after the next action.
-      h.addNative({ id: "video-a2", taskId: "task-1", directory: "03_项目制作", status: "qc_approved", name: "video-a2.mp4", mimeType: "video/mp4", size: 4096, sha256: "c".repeat(64), qualityApproved: true });
-      h.db.sqlite.prepare("UPDATE deseret_project_links SET state_json=json_set(json_set(state_json,'$.scenes[0].version',2),'$.scenes[0].fileVersionId','video-a2')").run();
-      await registerInPanel(host, "task-2", "eng-2");
-      assert.match(host.textContent ?? "", /Confirm the internal archive for: Scene 1/);
-      assert.equal((button(host, /Publish for publisher review/) as HTMLButtonElement).disabled, true);
     } finally { await unmount(); }
   });
 });

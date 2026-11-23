@@ -216,3 +216,38 @@
     border-inline-start: 1px solid rgba(255,255,255,.1);
   }
 }
+
+.deseret-archive { display:grid; align-content:start; gap:.85rem; }
+.archive-heading { display:flex; align-items:center; flex-wrap:wrap; gap:.5rem .75rem; justify-content:space-between; padding-block-end:.65rem; border-bottom:1px solid var(--line); }
+.archive-heading h4 { display:inline-flex; align-items:center; gap:.5rem; font-size:1rem; font-weight:650; }
+.archive-heading h4 svg { color:var(--accent); }
+.archive-heading > span { color:var(--muted); font-size:.875rem; }
+.archive-history { display:grid; gap:.75rem; min-inline-size:0; }
+.archive-history h5 { margin:0; }
+.archive-history article { border-inline-start:2px solid var(--line); padding-inline-start:.8rem; }
+.archive-history article small { display:block; margin-block-start:.35rem; }
+
+.brief-heading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.45rem 1rem; }
+.brief-heading h4 { font-size:1rem; font-weight:650; }
+.brief-heading .brief-receipt-toggle {
+  display:inline-flex; align-items:center; flex-wrap:wrap; gap:.45rem; min-height:2.15rem;
+  max-width:100%; padding:.2rem .4rem .2rem .55rem; border:0; border-radius:.45rem;
+  background:transparent; color:var(--text); font:inherit; font-size:.82rem; cursor:pointer;
+}
+.brief-heading .brief-receipt-toggle:hover { background:var(--surface-2); }
+.brief-receipt-count { border-radius:.3rem; padding:.14rem .4rem; background:var(--surface-2); color:var(--text); font-weight:600; font-variant-numeric:tabular-nums; }
+.brief-receipt-toggle[data-tone=complete] .brief-receipt-count { color:var(--accent); background:var(--brief-tint); }
+.brief-receipt-toggle[data-tone=attention] .brief-receipt-count { border:1px solid currentColor; }
+.brief-receipt-toggle svg { height:.9rem; width:.9rem; }
+.brief-receipt-toggle[aria-expanded=true] svg { transform:rotate(180deg); }
+.brief-no-files { color:var(--muted); font-size:.82rem; }
+.brief-receipt-list[hidden] { display:none; }
+.deseret-producer-brief .brief-receipts {
+  display:grid; grid-template-columns:repeat(auto-fit,minmax(min(14rem,100%),1fr));
+  list-style:none; gap:.45rem; padding:0; margin:0 0 .25rem;
+}
+.brief-receipts li { display:flex; align-items:center; gap:.5rem; padding:.45rem .6rem; min-width:0; background:var(--surface-2); border-radius:.45rem; font-size:.86rem; }
+.brief-receipts li > svg { color:var(--muted); }
+.brief-receipts .brief-file-name { flex:1; min-width:0; overflow-wrap:anywhere; }
+.brief-receipts small { flex:none; }
+.brief-receipts .icon-button { flex:none; width:2rem; height:2rem; }

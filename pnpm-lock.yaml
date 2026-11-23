@@ -135,6 +135,12 @@ importers:
         specifier: ^5.9.2
         version: 5.9.3
 
+  services/deseret-transfer-worker:
+    dependencies:
+      '@aws-sdk/client-s3':
+        specifier: 3.1121.0
+        version: 3.1121.0
+
 packages:
 
   '@alloc/quick-lru@5.2.0':

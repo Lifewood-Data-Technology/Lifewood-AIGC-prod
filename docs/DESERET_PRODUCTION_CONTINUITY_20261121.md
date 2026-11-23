@@ -1,8 +1,12 @@
 # Deseret 内部制作留档、发布绑定与接手核验（2026-11-21）
 
+> 2026-11-23 本地候选更新：负责人可以直接把已就绪、通过质检的分镜或成片送出版社审核。制作页不再提供新建工程留档，发布不要求上传工程源文件或逐镜确认留档。已保存的留档、旧发布关联和交接记录继续按原权限读取。以下为 11 月 21 日版本的历史说明。
+>
+> Local candidate, 2026-11-23. Leads can publish ready, quality-approved videos without an engineering archive or per-scene archive confirmation. Production screens no longer offer archive registration. Existing archives, historical publication links and handover records retain their access rules. The following sections describe the November 21 version.
+
 用户已确认实施。硬约束：工作日报整体保持原状，不强制填写、上传或关联，不改字段、开放时段、入口和旧数据。内部资料、内部文件名、路径、链接、日志和留档信息只保存在 AIGC，不进入 Deseret 仓库、出版社 API、文件传输任务、首次或重投事件，以及历史回放。
 
-本文是**现行说明**。[设计稿](superpowers/specs/2026-11-21-deseret-production-continuity-design.md)和[实施计划](superpowers/plans/2026-11-21-deseret-production-continuity.md)是实施前的历史记录，其中的简写和接口签名已有部分过期，以本文为准。
+本文记录 11 月 21 日的实现。[设计稿](superpowers/specs/2026-11-21-deseret-production-continuity-design.md)和[实施计划](superpowers/plans/2026-11-21-deseret-production-continuity.md)是实施前的历史记录，其中的简写和接口签名已有部分过期，以本文为准。
 
 本轮是本地候选：未提交、未推送、未部署，也未连接真实 Wasabi。
 

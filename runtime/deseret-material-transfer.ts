@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { createRelayTransport } from "./deseret-relay-transport";
 import {
   AbortMultipartUploadCommand, CompleteMultipartUploadCommand, CreateMultipartUploadCommand,
   HeadObjectCommand, S3Client, UploadPartCopyCommand,
@@ -13,7 +14,7 @@ import { wasabiAgentOptions } from "./wasabi-proxy.ts";
 type Integrity = NonNullable<HandoffMaterial["integrity"]>;
 type Profile = { id: string; bucket: string; endpoint: string; region: string; prefix: string };
 export type MaterialTransferConfig = {
-  strategy: "pending" | "server_copy";
+  strategy: "pending" | "server_copy" | "deseret_relay";
   deseret: Profile;
   aigc: Profile;
   accessKeyId: string;
@@ -36,7 +37,8 @@ export type MaterialTransferInput = {
   targetStorageProfileId?: string;
   reviewObjectPrefix?: string;
   multipartUploadId?: string;
-  onMultipartCreated?: (uploadId: string) => Promise<void>;
+  sourcePin?: {etag: string; versionId?: string};
+  onMultipartCreated?: (uploadId: string, sourcePin?: {etag: string; versionId?: string}) => Promise<void>;
 };
 export type MaterialTransferLocation = {
   storageProfileId: string; bucket: string; endpoint: string; region: string;
@@ -45,15 +47,18 @@ export type MaterialTransferLocation = {
 export type MaterialTransferPlan = {
   id: string;
   receiptId: string;
+  transport?: "deseret_relay";
   file: HandoffMaterial;
   source: MaterialTransferLocation;
   target: MaterialTransferLocation;
 };
 export interface MaterialTransferTransport {
+  dispose?(): void;
   head(input: HeadObjectCommandInput, signal: AbortSignal): Promise<HeadObjectCommandOutput>;
   begin(input: CreateMultipartUploadCommandInput, signal: AbortSignal): Promise<CreateMultipartUploadCommandOutput>;
   copyPart(input: UploadPartCopyCommandInput, signal: AbortSignal): Promise<UploadPartCopyCommandOutput>;
   complete(input: CompleteMultipartUploadCommandInput, signal: AbortSignal): Promise<CompleteMultipartUploadCommandOutput>;
+  listParts?(input: {Bucket: string; Key: string; UploadId: string}, signal: AbortSignal): Promise<{PartNumber: number; ETag: string; Size: number}[]>;
   abort(input: AbortMultipartUploadCommandInput, signal: AbortSignal): Promise<unknown>;
 }
 export class TransferUnavailableError extends Error {
@@ -89,7 +94,7 @@ export function deseretStorageProfileId(profile: Pick<Profile, "endpoint" | "buc
 export function readMaterialTransferConfig(env: NodeJS.ProcessEnv = process.env): MaterialTransferConfig {
   const prefix = "LIFEWOOD_DESERET_TRANSFER_";
   const strategy = env[prefix + "STRATEGY"] || "pending";
-  if (strategy !== "pending" && strategy !== "server_copy") throw new TransferUnavailableError("TRANSFER_NOT_CONFIGURED", "Unknown material transfer strategy.");
+  if (strategy !== "pending" && strategy !== "server_copy" && strategy !== "deseret_relay") throw new TransferUnavailableError("TRANSFER_NOT_CONFIGURED", "Unknown material transfer strategy.");
   return {
     strategy,
     deseret: {
@@ -115,6 +120,7 @@ function sdkTransport(config: MaterialTransferConfig): MaterialTransferTransport
     requestHandler: { ...wasabiAgentOptions(config.httpProxy), connectionTimeout: 10000, socketTimeout: 120000, throwOnRequestTimeout: true },
   });
   return {
+    dispose: () => client.destroy(),
     head: (input, signal) => client.send(new HeadObjectCommand(input), { abortSignal: signal }),
     begin: (input, signal) => client.send(new CreateMultipartUploadCommand(input), { abortSignal: signal }),
     copyPart: (input, signal) => client.send(new UploadPartCopyCommand(input), { abortSignal: signal }),
@@ -167,24 +173,24 @@ function matchesTransferReceipt(input: MaterialTransferInput, receipt: string | 
 }
 
 const copyPartBytes = 1024 ** 3;
-export function materialTransferBudget(size: number) {
+export function materialTransferBudget(size: number, strategy = "server_copy") {
   if (!Number.isSafeInteger(size) || size < 1) throw Error("Invalid material copy size.");
-  const parts = Math.ceil(size / copyPartBytes);
+  const parts = Math.ceil(size / (strategy === "deseret_relay" ? 8 * 1024 ** 2 : copyPartBytes));
   if (parts > 10000) throw Error("Material exceeds the supported multipart count.");
   const timeoutMs = Math.max(10 * 60000, parts * 120000 + 120000);
-  return { timeoutMs, leaseMs: timeoutMs + 2 * 60000 };
+  return { timeoutMs, leaseMs: strategy === "deseret_relay" ? 3 * 60000 : timeoutMs + 2 * 60000 };
 }
 
 export function planDeseretMaterialTransfer(config: MaterialTransferConfig, input: MaterialTransferInput): MaterialTransferPlan {
-  if (config.strategy !== "server_copy") throw new TransferUnavailableError("TRANSFER_NOT_CONFIGURED", "Material transfer awaits configuration.");
+  if (config.strategy !== "server_copy" && config.strategy !== "deseret_relay") throw new TransferUnavailableError("TRANSFER_NOT_CONFIGURED", "Material transfer awaits configuration.");
   const computedDeseretId = deseretStorageProfileId(config.deseret);
   if (config.deseret.id && config.deseret.id !== computedDeseretId) throw new TransferUnavailableError("TRANSFER_NOT_CONFIGURED", "Deseret storage profile does not match the configured bucket identity.");
   const deseret = validateProfile({ ...config.deseret, id: computedDeseretId }), aigc = validateProfile(config.aigc);
   if (deseret.id === aigc.id || !config.accessKeyId || !config.secretAccessKey) throw new TransferUnavailableError("TRANSFER_NOT_CONFIGURED", "Independent storage profiles and AIGC credentials are required.");
-  if (deseret.endpoint !== aigc.endpoint || deseret.region !== aigc.region) throw new TransferUnavailableError("TRANSFER_REGION_UNSUPPORTED", "Server-side copy requires matching storage endpoints and regions.");
+  if (config.strategy === "server_copy" && (deseret.endpoint !== aigc.endpoint || deseret.region !== aigc.region)) throw new TransferUnavailableError("TRANSFER_REGION_UNSUPPORTED", "Server-side copy requires matching storage endpoints and regions.");
   if (!/^[A-Za-z0-9_-]{1,120}$/.test(input.projectId) || !input.sourceRevision || input.sourceRevision.length > 120 || !["deseret_to_aigc", "aigc_to_deseret"].includes(input.direction)) throw Error("Invalid transfer project identity.");
   const [file] = validateHandoffManifest([input.file]);
-  materialTransferBudget(file.size);
+  materialTransferBudget(file.size, config.strategy);
   const source = input.direction === "deseret_to_aigc" ? deseret : aigc;
   const target = input.direction === "deseret_to_aigc" ? aigc : deseret;
   if (input.targetStorageProfileId && input.targetStorageProfileId !== target.id) throw new TransferUnavailableError("TRANSFER_NOT_CONFIGURED", "Target storage profile does not match the project handoff.");
@@ -209,27 +215,36 @@ export function planDeseretMaterialTransfer(config: MaterialTransferConfig, inpu
   const result = { ...file, storageProfileId: target.id, objectKey };
   if (result.integrity) Object.freeze(result.integrity);
   Object.freeze(result);
-  const details = { receiptId, file: result, source: location(source, file.objectKey, input.direction === "deseret_to_aigc"), target: location(target, objectKey, input.direction === "aigc_to_deseret") };
+  const details = { ...(config.strategy === "deseret_relay" ? {transport: "deseret_relay" as const} : {}), receiptId, file: result, source: location(source, file.objectKey, input.direction === "deseret_to_aigc"), target: location(target, objectKey, input.direction === "aigc_to_deseret") };
   return Object.freeze({ id: createHash("sha256").update(JSON.stringify(details)).digest("hex"), ...details });
 }
 
 export function createDeseretMaterialTransfer(config = readMaterialTransferConfig(), suppliedTransport?: MaterialTransferTransport) {
   config = { ...config, deseret: { ...config.deseret }, aigc: { ...config.aigc } };
-  let transport = suppliedTransport;
+
   const service = {
     planTransfer: (input: MaterialTransferInput) => planDeseretMaterialTransfer(config, input),
+    async abortTransfer(input: MaterialTransferInput, recordedPlan: MaterialTransferPlan) {
+      const plan=planDeseretMaterialTransfer(config,input);
+      if(JSON.stringify(plan)!==JSON.stringify(recordedPlan)||!input.multipartUploadId||input.multipartUploadId.length>4096)throw new TransferUnavailableError('TRANSFER_PLAN_MISMATCH','Upload cleanup requires its owned persisted plan.');
+      const transport=suppliedTransport??(config.strategy==='deseret_relay'?createRelayTransport(config,input,plan):sdkTransport(config));
+      try{await transport.abort({Bucket:plan.target.bucket,Key:plan.target.objectKey,UploadId:input.multipartUploadId},input.signal??AbortSignal.timeout(30000));}
+      catch(error){if((error as {name?:string}).name!=='NoSuchUpload')throw error;}
+      finally{if(!suppliedTransport)transport.dispose?.();}
+    },
     async transferFile(input: MaterialTransferInput, recordedPlan?: MaterialTransferPlan): Promise<HandoffMaterial> {
       const plan = planDeseretMaterialTransfer(config, input);
       if (recordedPlan && JSON.stringify(recordedPlan) !== JSON.stringify(plan)) throw new TransferUnavailableError("TRANSFER_PLAN_MISMATCH", "The persisted storage plan requires reconciliation before retry.");
       const [file] = validateHandoffManifest([input.file]);
       const { source, target, receiptId } = plan;
       const digest = integrityOf(file), sourceKey = source.objectKey, targetKey = target.objectKey;
-      transport ??= sdkTransport(config);
+      const transport = suppliedTransport ?? (config.strategy === "deseret_relay" ? createRelayTransport(config, input, plan) : sdkTransport(config));
       const within = (milliseconds: number) => input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(milliseconds)]) : AbortSignal.timeout(milliseconds);
       const targetHead = async () => {
-        try { return await transport!.head({ Bucket: target.bucket, Key: targetKey, ChecksumMode: "ENABLED" }, within(15000)); }
+        try { return await transport!.head({ Bucket: target.bucket, Key: targetKey, ChecksumMode: "ENABLED" }, within(config.strategy === "deseret_relay" ? 60000 : 15000)); }
         catch (error) {
-          if ((error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 404) return null;
+          const failure = error as { code?: string; $metadata?: { httpStatusCode?: number } };
+          if (failure.$metadata?.httpStatusCode === 404 && failure.code !== "TRANSFER_NOT_CONFIGURED") return null;
           throw error;
         }
       };
@@ -239,10 +254,17 @@ export function createDeseretMaterialTransfer(config = readMaterialTransferConfi
         if (digest.algorithm === "sha256" && head.ChecksumSHA256 && head.ChecksumType !== "COMPOSITE" && head.ChecksumSHA256 !== Buffer.from(digest.value, "hex").toString("base64")) throw new TransferUnavailableError("TRANSFER_DESTINATION_CONFLICT", "Target SHA-256 mismatch.");
         return result;
       };
+      try {
       const existing = await targetHead();
       if (existing) return confirm(existing);
-      const sourceHead = await transport.head({ Bucket: source.bucket, Key: sourceKey, ChecksumMode: "ENABLED" }, within(15000));
+      const sourceHead = await transport.head({ Bucket: source.bucket, Key: sourceKey, ChecksumMode: "ENABLED", VersionId: input.sourcePin?.versionId }, within(config.strategy === "deseret_relay" ? 60000 : 15000));
       verifySource(file, sourceHead, input.sourceReceipt);
+      const sourcePin={etag:etag(sourceHead.ETag),...(sourceHead.VersionId?{versionId:sourceHead.VersionId}:{})};
+      if (config.strategy === "deseret_relay" && (input.multipartUploadId || input.sourcePin)) {
+        if (!input.sourcePin || input.sourcePin.etag !== sourcePin.etag || input.sourcePin.versionId !== sourcePin.versionId) {
+          throw new TransferUnavailableError("TRANSFER_SOURCE_CHANGED", "Persisted source identity changed; reconcile the upload before retry.");
+        }
+      }
       const copySource = `${source.bucket}/${sourceKey.split("/").map(encodeURIComponent).join("/")}${sourceHead.VersionId ? `?versionId=${encodeURIComponent(sourceHead.VersionId)}` : ""}`;
       let uploadId = input.multipartUploadId;
       if (uploadId && (uploadId.length > 4096 || Array.from(uploadId).some((character) => character.charCodeAt(0) <= 32))) throw Error("Invalid persisted multipart identity.");
@@ -250,22 +272,25 @@ export function createDeseretMaterialTransfer(config = readMaterialTransferConfi
         const created = await transport.begin({
           Bucket: target.bucket, Key: targetKey, ContentType: file.mimeType,
           Metadata: { "lifewood-integrity-algorithm": digest.algorithm, "lifewood-integrity-value": digest.value, "lifewood-transfer": receiptId },
-        }, within(15000));
+        }, within(config.strategy === "deseret_relay" ? 60000 : 15000));
         if (!created.UploadId) throw Error("Storage copy did not return an upload identity.");
         uploadId = created.UploadId;
-        try { await input.onMultipartCreated?.(uploadId); }
+        try { await input.onMultipartCreated?.(uploadId, sourcePin); }
         catch (error) {
           await transport.abort({ Bucket: target.bucket, Key: targetKey, UploadId: uploadId }, AbortSignal.timeout(15000)).catch(() => {});
           throw error;
         }
       }
       try {
-        const partSize = copyPartBytes;
+        const partSize = config.strategy === "deseret_relay" ? 8 * 1024 ** 2 : copyPartBytes;
         const partCount = Math.ceil(file.size / partSize);
         if (partCount > 10000) throw Error("Material exceeds the supported server-copy size.");
         const parts = [];
+        const previous = input.multipartUploadId && transport.listParts ? await transport.listParts({Bucket: target.bucket, Key: targetKey, UploadId: uploadId}, within(30000)) : [];
         for (let part = 1; part <= partCount; part++) {
           const start = (part - 1) * partSize, end = Math.min(file.size, start + partSize) - 1;
+          const retained = previous.find(value => value.PartNumber === part && value.Size === end - start + 1 && value.ETag);
+          if (retained) { parts.push({PartNumber: part, ETag: retained.ETag}); continue; }
           const copied = await transport.copyPart({
             Bucket: target.bucket, Key: targetKey, UploadId: uploadId, PartNumber: part,
             CopySource: copySource, CopySourceIfMatch: `"${etag(sourceHead.ETag)}"`, CopySourceRange: `bytes=${start}-${end}`,
@@ -291,6 +316,7 @@ export function createDeseretMaterialTransfer(config = readMaterialTransferConfi
         }
         throw error;
       }
+      } finally { if (!suppliedTransport) transport.dispose?.(); }
     },
   };
   return service;

@@ -206,25 +206,10 @@ describe("Publication keeps historical scripts internal and never invents one", 
     h.db.sqlite.prepare("INSERT INTO production_submission_receipts VALUES ('sub-final',?,?)").run(MAKER, JSON.stringify({ deseretPhase: "final", finalVersionId: "file-final" }));
   }
   const publishedFinal = () => h.state().packages.at(-1)!.scenes[0];
-  /** Publication pins an internal archive to every scene (see deseret-production-archive.test.ts); register one for task-1. */
-  async function publishWithArchive(payload: Row, sceneIds: string[]) {
-    h.db.sqlite.prepare("INSERT OR IGNORE INTO aigc_folders (id,parent_folder_id,language_project_id,folder_code,deleted_at) VALUES ('folder-task-1-project','folder-task-1-03','task-1','03.project',NULL)").run();
-    h.addNative({ id: "file-engineering", taskId: "task-1", directory: "03_项目制作", status: "available", name: "trailer.prproj", mimeType: "application/octet-stream", size: 10, sha256: "f".repeat(64) });
-    h.db.sqlite.prepare("UPDATE aigc_files SET folder_id='folder-task-1-project' WHERE id='logical-file-engineering'").run();
-    await command(LEAD, "archive.register", { taskId: "task-1", projectVersionId: "file-engineering" });
-    const archive = String((h.db.sqlite.prepare("SELECT id FROM deseret_production_archives ORDER BY archive_number DESC").get() as Row).id);
-    // Explicit confirmation of each scene's current version and video; a final scene is the published final file.
-    const state = h.state();
-    const confirm = (id: string) => { const scene = state.scenes.find(item => item.id === id);
-      return scene ? { archiveId: archive, sceneVersion: scene.version, videoVersionId: scene.fileVersionId }
-        : { archiveId: archive, sceneVersion: 1 + state.packages.filter(pack => pack.phase === "final" && pack.files.some(file => file.languageTaskId === "task-1")).length, videoVersionId: String(payload.fileVersionId) }; };
-    return command(LEAD, "package.publish", { ...payload, sources: Object.fromEntries(sceneIds.map(id => [id, confirm(id)])) });
-  }
-
   it("publishes a storyboard of scenes without scripts and keeps historical text in the package", async () => {
     setup(productionState([historical, sceneA]));
     nativeVideo("file-scene-a", "qc_approved");
-    await publishWithArchive({ phase: "storyboard" }, ["scene-1", "scene-a"]);
+    await command(LEAD, "package.publish", { phase: "storyboard" });
     const [old, fresh] = h.state().packages.at(-1)!.scenes;
     assert.equal(old.script, HISTORICAL_SCRIPT);
     assert.equal(Object.hasOwn(fresh, "script"), false);
@@ -232,16 +217,16 @@ describe("Publication keeps historical scripts internal and never invents one", 
 
   it("joins only the stored scripts into the final scene, and adds none when no scene has one", async () => {
     finalProduction([historical, sceneA]);
-    await publishWithArchive({ phase: "final", fileVersionId: "file-final", duration: 40 }, ["final-task-1"]);
+    await command(LEAD, "package.publish", { phase: "final", fileVersionId: "file-final", duration: 40 });
     assert.equal(publishedFinal().script, HISTORICAL_SCRIPT);
     const padded = { ...historical, id: "scene-2", order: 3, script: "  Second legacy text  " };
     finalProduction([historical, sceneA, padded, { ...sceneA, id: "scene-blank", order: 4, script: "   " }]);
-    await publishWithArchive({ phase: "final", fileVersionId: "file-final", duration: 40 }, ["final-task-1"]);
+    await command(LEAD, "package.publish", { phase: "final", fileVersionId: "file-final", duration: 40 });
     assert.equal(publishedFinal().script, `${HISTORICAL_SCRIPT}
 
   Second legacy text  `, "stored texts are joined byte for byte; blank ones are skipped");
     finalProduction([sceneA]);
-    await publishWithArchive({ phase: "final", fileVersionId: "file-final", duration: 40 }, ["final-task-1"]);
+    await command(LEAD, "package.publish", { phase: "final", fileVersionId: "file-final", duration: 40 });
     assert.equal(Object.hasOwn(publishedFinal(), "script"), false, JSON.stringify(publishedFinal()));
   });
 });
