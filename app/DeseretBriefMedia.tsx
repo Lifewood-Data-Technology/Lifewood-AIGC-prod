@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { BriefFile } from "../lib/deseret-producer-brief";
-import { FileAudio, FileImage } from "./DirectFileMedia";
+import { FileAudio, FileImage, FileVideo } from "./DirectFileMedia";
 import { directTransferEnabled } from "../lib/direct-upload-client";
 
 export function briefMediaKind(file: BriefFile) {
@@ -68,7 +68,7 @@ function ImageViewer({ src, name, zh, close }: { src: string; name: string; zh: 
   </dialog>;
 }
 
-export default function DeseretBriefMedia({ kind, version, name, zh }: { kind: "image" | "audio"; version: string; name: string; zh: boolean }) {
+export default function DeseretBriefMedia({ kind, version, name, zh }: { kind: "image" | "audio" | "video"; version: string; name: string; zh: boolean }) {
   const [opened, setOpened] = useState(false);
   const [failed, setFailed] = useState(false);
   const src = "/api/files?id=" + encodeURIComponent(version);
@@ -81,6 +81,10 @@ export default function DeseretBriefMedia({ kind, version, name, zh }: { kind: "
         });
       }} onError={() => setFailed(true)} />
     {failed && <span role="alert">{zh ? "音频无法播放，可下载原文件试听。" : "Playback unavailable. Download the original audio to listen."}</span>}
+  </>;
+  if (kind === "video") return <>
+    <FileVideo controls playsInline preload="metadata" src={src} aria-label={name} onError={() => setFailed(true)} />
+    {failed && <span role="alert">{zh ? "视频无法播放，可下载原文件观看。" : "Playback unavailable. Download the original video to watch it."}</span>}
   </>;
   const label = zh ? "查看大图" : "Enlarge image";
   return <>

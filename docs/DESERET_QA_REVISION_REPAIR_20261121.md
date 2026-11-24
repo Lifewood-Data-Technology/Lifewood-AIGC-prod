@@ -41,3 +41,9 @@
 - `tests/deseret-revision-source-render.test.ts`：在 jsdom 中渲染真实的制作面板。数据为真实服务按负责人、任务 1 剪辑师和另一任务质检员分别投影的工作区。中英文下逐条核对问题的来源标签，并确认普通反馈和作者反馈保留原标签。测试通过 `tests/support/tsx-load.mjs` 用项目自带的 TypeScript 转译 `.tsx`。
 
 `registerIncoming` 的对象复制依赖真实存储，未做端到端测试。它使用的复用查询已直接测试。界面改动（截图时间、说明及来源标签）只有 jsdom 渲染测试，没有在本仓库做浏览器验收。
+
+## 2026-11-24 成片审阅参考文件 / Final-film review references
+
+本地联审版本。每条意见可包含 PNG、JPEG、MP4 或 MOV 参考文件，单个附件上限为 10 MiB。成片位置使用所审影片的时间。QA 退回时，AIGC 按原有 `issues[].frames[].file` 清单接收、校验和传输到对应语言任务。接收人员可预览图片、播放支持的视频或下载原文件。 既有截图按 PNG/JPEG MIME 类型识别，兼容没有扩展名或后缀不同的历史文件名。视频参考文件同时校验 MIME 类型和扩展名。
+
+Locally verified. Final-film feedback supports PNG, JPEG, MP4 and MOV references up to 10 MiB per file. Each timestamp locates the issue in the reviewed film. When QA returns selected issues, the existing manifest and transfer path deliver attachments to their language tasks. Recipients can preview images, play supported video or download the original. Legacy PNG and JPEG screenshots retain their original file names, including missing or different extensions. Video references require matching MIME types and extensions.

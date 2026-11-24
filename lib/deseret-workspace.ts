@@ -83,7 +83,7 @@ export type DeseretFeedback = {
   sceneVersion?: number;
   /** End of a reviewed interval; `seconds` is its start. */
   endSeconds?: number;
-  /** Final QA revision issue: frame images with their own times. */
+  /** Final QA revision issue: frame files (PNG/JPEG images or MP4/MOV video references) with their own times. */
   frames?: DeseretRevisionFrame[];
   /** On an issue: the QA summary feedback id (the signed conclusion event id) it was returned with. */
   revisionId?: string;
@@ -92,7 +92,7 @@ export type DeseretFeedback = {
 };
 export type DeseretIssueRole = "marketing" | "creative" | "publisher_qa";
 /**
- * A frame image. Stored state keeps the canonical Deseret guidance manifest. The workspace projection keeps
+ * A frame file: a PNG/JPEG image or an MP4/MOV video reference (see `lib/deseret-frame-media.ts`). Stored state keeps the canonical Deseret guidance manifest. The workspace projection keeps
  * only its display identity, transfer state and, when this account may read it, the native copy registered
  * in the issue's own task (`nativeVersionId`); storage profiles and object keys are not projected.
  */

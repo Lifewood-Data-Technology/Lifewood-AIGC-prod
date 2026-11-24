@@ -549,8 +549,8 @@ function DeseretProductionState({
           {record.seconds !== undefined && <small>{record.endSeconds !== undefined ? `${record.seconds}s–${record.endSeconds}s` : `${record.seconds}s`}</small>}
           {record.frames?.map((frame, index) => (
             <div key={`${frame.file.id}:${index}`} className="deseret-revision-frame">
-              <small>{zh ? "截图时间" : "Frame at"} {frame.seconds}s{frame.caption ? ` · ${frame.caption}` : ""}</small>
-              <DeseretBriefFiles files={[frame.file]} visible locale={locale} />
+              <small>{zh ? "成片时间" : "Film time"} {frame.seconds}s{frame.caption ? ` · ${frame.caption}` : ""}</small>
+              <DeseretBriefFiles files={[frame.file]} visible revisionFrame locale={locale} />
             </div>
           ))}
         </blockquote>

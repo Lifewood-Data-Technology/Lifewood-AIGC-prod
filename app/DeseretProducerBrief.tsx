@@ -6,8 +6,10 @@ import { LogIcon } from "./AdminLogControls";
 import { ChevronIcon } from "./ControlIcons";
 import { MenuIcon } from "./MenuIcon";
 import DeseretBriefMedia, { briefMediaKind } from "./DeseretBriefMedia";
+import { revisionFrameKind } from "../lib/deseret-frame-media";
 
-export function DeseretBriefFiles({files, visible, locale, receiptList = false}: {receiptList?: boolean; files: BriefFile[]; visible: boolean; locale: "zh" | "en"}) {
+/** `revisionFrame`: files are final QA revision frames, previewed as image or video only by their exact frame type. */
+export function DeseretBriefFiles({files, visible, locale, receiptList = false, revisionFrame = false}: {receiptList?: boolean; revisionFrame?: boolean; files: BriefFile[]; visible: boolean; locale: "zh" | "en"}) {
   const [downloading, setDownloading] = useState("");
   const [failed, setFailed] = useState(false);
   const zh = locale === "zh";
@@ -29,7 +31,7 @@ export function DeseretBriefFiles({files, visible, locale, receiptList = false}:
     const downloadable = file.state === "ready" && Boolean(file.nativeVersionId);
     const awaiting = file.state === "pending" || file.state === "running";
     const status = awaiting ? (zh ? "待接收" : "Awaiting file") : (zh ? "暂不可用" : "Currently unavailable");
-    const kind = visible && downloadable ? briefMediaKind(file) : null;
+    const kind = !visible || !downloadable ? null : revisionFrame ? revisionFrameKind(file) : briefMediaKind(file);
     return <li key={`${file.id}:${index}`} data-media={kind || undefined}>
       {kind && file.nativeVersionId && <div className="deseret-file-preview"><DeseretBriefMedia key={file.nativeVersionId} kind={kind} version={file.nativeVersionId} name={file.name} zh={zh} /></div>}
       <MenuIcon name="library" /><span className="brief-file-name">{file.name}{!receiptList && !downloadable && ` · ${status}`}</span>
