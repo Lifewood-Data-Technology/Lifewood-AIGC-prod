@@ -25,9 +25,30 @@ export function findTop(ts:Token[],name:string,start=0){let depth=0;for(let i=st
 export function split(ts:Token[],separator=','){let depth=0,start=0;const parts:Token[][]=[];for(let i=0;i<ts.length;i++){if(ts[i].text==='(')depth++;else if(ts[i].text===')')depth--;else if(depth===0&&ts[i].text===separator){parts.push(ts.slice(start,i));start=i+1;}}parts.push(ts.slice(start));return parts;}
 export function bindTokens(ts:Token[],values:Value[]){if(ts.some(t=>t.kind==='param'&&t.bind!==undefined&&t.bind>=values.length))throw Error('Missing SQL bind value');return ts.map(t=>t.kind==='param'?param(t.bind===undefined?t.value??null:values[t.bind]):t);}
 const raw=(s:string)=>lex(s);
-let jsonAlias=0;
+const tableClauses = new Set([
+ 'AS', 'WHERE', 'GROUP', 'HAVING', 'ORDER', 'LIMIT', 'OFFSET', 'WINDOW',
+ 'UNION', 'INTERSECT', 'EXCEPT', 'JOIN', 'INNER', 'LEFT', 'RIGHT', 'FULL',
+ 'OUTER', 'CROSS', 'NATURAL', 'STRAIGHT_JOIN', 'ON', 'USING', 'RETURNING',
+ 'FOR', 'INDEXED', 'NOT',
+]);
+
+function isTableAlias(token: Token | undefined): boolean {
+ return token?.kind === 'quoted' || (token?.kind === 'word' && !tableClauses.has(token.text.toUpperCase()));
+}
+
 export function render(tokens:Token[],values:Value[]=[],previousChanges=0):{sql:string;values:Value[]}{
  const bound=bindTokens(tokens,values);const result:Value[]=[];
+ let aliasIndex = 0;
+ let reservedIdentifiers: Set<string> | undefined;
+ function nextJsonAlias(): string {
+  // An alias later in the input can be referenced by an earlier or nested expression.
+  reservedIdentifiers ??= new Set(tokens
+   .filter(token => token.kind === 'word' || token.kind === 'quoted')
+   .map(token => identifier(token).toLowerCase()));
+  let alias: string;
+  do { alias = `json_rows_${++aliasIndex}`; } while (reservedIdentifiers.has(alias));
+  return alias;
+ }
  function emit(ts:Token[]):string{
   const out:string[]=[];
   for(let i=0;i<ts.length;i++){
@@ -43,9 +64,20 @@ export function render(tokens:Token[],values:Value[]=[],previousChanges=0):{sql:
     if(name==='changes'){if(args[0].length)throw Error('Unsupported changes()');out.push(String(previousChanges));i=end;continue;}
     if(name==='json_each'){
      if(args.length!==1)throw Error('Unsupported JSON iterator');
-     const alias=ts[end+1]?.kind==='word'&&!['WHERE','ORDER','GROUP','LIMIT','JOIN','ON','UNION','HAVING'].includes(ts[end+1].text.toUpperCase())?identifier(ts[end+1]):`json_rows_${++jsonAlias}`;
+     let last = end;
+     const hasAs = word(ts[end + 1], 'AS');
+     const aliasIndexInTokens = end + (hasAs ? 2 : 1);
+     const token = ts[aliasIndexInTokens];
+     let alias: string;
+     if (isTableAlias(token)) {
+      alias = identifier(token);
+      last = aliasIndexInTokens;
+     } else {
+      if (hasAs || token?.kind === 'string') throw Error('Expected an identifier for json_each alias');
+      alias = nextJsonAlias();
+     }
      const source=emit(args[0]);out.push(`(SELECT ordinality-1 AS \`key\`, CASE WHEN JSON_TYPE(item)='NULL' COLLATE utf8mb4_bin THEN NULL ELSE JSON_UNQUOTE(item) END COLLATE utf8mb4_0900_bin AS value FROM JSON_TABLE(${source}, '$[*]' COLUMNS (ordinality FOR ORDINALITY,item JSON PATH '$')) AS jt) AS ${quote(alias)}`);
-     i=end+(alias.startsWith('json_rows_')?0:1);continue;
+     i=last;continue;
     }
     if(name==='json_extract'){
      if(args.length!==2)throw Error('Unsupported JSON extraction');
