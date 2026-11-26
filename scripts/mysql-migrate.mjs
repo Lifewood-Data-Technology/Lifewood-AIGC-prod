@@ -21,6 +21,8 @@ try{
   const previous=history.find(h=>h.version===migration.version);
   if(previous?.completed===1)continue;
   if(!previous){await c.execute('INSERT INTO _lifewood_migrations(version,sha256) VALUES (?,?)',[migration.version,migration.digest]);for(const statement of migration.statements)await c.query(statement);}
+  // The publisher status repair is transactional and idempotent. Schema verification alone cannot detect a rolled-back data repair.
+  else if(migration.version==='0011'){for(const statement of migration.statements)await c.query(statement);}
   else if(previous.completed!==1&&!process.argv.includes('--verify-complete'))throw Error('Incomplete migration '+migration.version+'; apply its remaining reviewed administrator DDL, then use --verify-complete');
   await verifySchema(c,migration.version);await verifyTriggers(c,migrations.filter(m=>m.version<=migration.version).flatMap(m=>m.statements));
   if(!previous||previous.completed!==1)await c.execute('UPDATE _lifewood_migrations SET completed=TRUE WHERE version=? AND sha256=?',[migration.version,migration.digest]);

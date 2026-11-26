@@ -43,5 +43,7 @@ it("publishes all seven approved versions even when a terminated task retains a 
     action: "package.publish", requestId: "send-reviewed-scenes", expectedRevision: h.state().revision, payload: { phase: "storyboard" },
   });
   assert.equal(result.stage, "storyboard_review");
+  assert.deepEqual(h.db.sqlite.prepare("SELECT status FROM language_projects WHERE project_id=? ORDER BY id").all(PROJECT).map(row => row.status),
+    ["待客户预览", "已终止"]);
   assert.deepEqual(result.packages.at(-1)?.files.map(file => file.fileVersionId), scenes.map(scene => scene.fileVersionId));
 });

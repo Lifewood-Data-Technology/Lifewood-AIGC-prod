@@ -44,7 +44,7 @@ const copy = {
     intakeStage: "Production preparation",
     production: "Scene production",
     storyboard_review: "Publisher storyboard review",
-    revision: "Revision",
+    revision: "Awaiting revision assignment",
     final_production: "Final production",
     final_review: "Publisher final review",
     archived: "Archived",
@@ -87,7 +87,7 @@ const copy = {
     intakeStage: "制作准备",
     production: "分镜制作",
     storyboard_review: "出版社分镜审核",
-    revision: "返修",
+    revision: "待分派返修",
     final_production: "成片制作",
     final_review: "出版社成片审核",
     archived: "已归档",
@@ -273,7 +273,7 @@ function DeseretProductionState({
           const failure: { code?: string } = await response
             .json()
             .catch(() => ({}));
-          if (failure.code === "DESERET_CONFLICT") {
+          if (failure.code === "DESERET_CONFLICT" || failure.code === "DESERET_FINAL_QC_OPEN" || failure.code === "STALE_RECORD") {
             pendingRequest.current = undefined;
             setReload((value) => value + 1);
           }
@@ -320,8 +320,12 @@ function DeseretProductionState({
       : "storyboard";
   const status = (value: DeseretStage | DeseretWorkspace["intake"]) =>
     value === "intake" ? c.intakeStage : c[value];
-  const finalFiles = data.fileCandidates.filter(file =>
-    file.finalSubmission === true && file.mimeType.startsWith("video/") &&
+  const revisingFinal = data.stage === "final_production" && data.revisionSceneIds.length > 0;
+  const returnedFiles = new Set(revisingFinal ? data.packages.filter(pack => pack.phase === "final" &&
+    pack.scenes.some(scene => data.revisionSceneIds.includes(scene.id))).flatMap(pack => pack.files.map(file => file.fileVersionId)) : []);
+  const unfinishedQc = new Set(data.tasks.filter(task => ["待质检", "质检驳回"].includes(task.status)).map(task => task.id));
+  const finalFiles = data.fileCandidates.filter(file => !unfinishedQc.has(file.languageTaskId) &&
+    !returnedFiles.has(file.id) && file.finalSubmission === true && file.mimeType.startsWith("video/") &&
     file.qualityPassed && file.storageReady && !isStoryboardFileVersion(data, file.id),
   );
   const latestFinal = finalFiles.find(file => file.id === finalFileVersionId);
@@ -333,7 +337,7 @@ function DeseretProductionState({
   const validDuration = Number(finalDuration) > 0 && Number(finalDuration) <= 14400;
   const unapprovedScenes = data.scenes.filter(scene => !data.fileCandidates.some(file => file.id === scene.fileVersionId && file.qualityPassed && file.storageReady));
   const publishReason = phase === "final"
-    ? (!latestFinal || !validDuration ? (zh ? "请选择质检通过的成片并填写时长。" : "Select a quality-approved final video and enter its duration.") : "")
+    ? (!finalFiles.length && unfinishedQc.size ? (zh ? "请先完成当前成片的质检，再发布给出版社。" : "Complete internal QC of the current final before publishing.") : !latestFinal || !validDuration ? (zh ? "请选择质检通过的成片并填写时长。" : "Select a quality-approved final video and enter its duration.") : "")
     : data.storyboardDraftCount
       ? (zh ? `还有 ${data.storyboardDraftCount} 个分镜草稿待送质检。` : `${data.storyboardDraftCount} scene draft(s) await submission to QC.`)
     : data.storyboardDraftCount !== undefined && storyboardRevisionScopeChanged(data)
@@ -350,7 +354,7 @@ function DeseretProductionState({
       <header className="deseret-project-heading">
         <h3><MenuIcon name="projects" />{c.title}</h3>
         <span>
-          {status(data.stage)} · {zh ? `资料第 ${data.submissionVersion} 版` : `Brief version ${data.submissionVersion}`}
+          {revisingFinal ? (zh ? "成片返修中" : "Final revision in progress") : status(data.stage)} · {zh ? `资料第 ${data.submissionVersion} 版` : `Brief version ${data.submissionVersion}`}
         </span>
       </header>
       {commandError && <p role="alert">{commandError === "character"

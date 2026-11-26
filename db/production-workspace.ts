@@ -235,6 +235,7 @@ export async function productionWorkspaceData(email: string, taskId: string) {
     .flatMap(pack => pack.files.filter(file => file.languageTaskId === taskId).map(file => file.fileVersionId)) ?? [];
   const taskFiles = new Map(visible.map(file => [String(file.id),file]));
   const deseret = state && link ? {
+    finalRevision: state.stage === "final_production" && state.packages.filter(pack => pack.phase === "final" && !pack.withdrawn && pack.files.some(file => file.languageTaskId === taskId)).at(-1)?.scenes.some(scene => scene.languageTaskId === taskId && state.revisionSceneIds.includes(scene.id)) === true,
     revision: Number(link.revision), publishedFinalVersionIds, stage: state.stage, intake: state.intake, materials: state.materials,
     scenes: state.scenes.filter(scene => scene.languageTaskId === taskId).map(scene=>({...scene,qualityStatus:String(taskFiles.get(scene.fileVersionId)?.status ?? "")})),
     drafts: (state.storyboardDrafts ?? []).filter(draft=>draft.languageTaskId===taskId).map(({languageTaskId:_,...draft})=>({...draft,name:String(taskFiles.get(draft.fileVersionId)?.name ?? "")})),

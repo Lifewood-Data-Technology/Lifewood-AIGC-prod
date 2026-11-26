@@ -1,6 +1,6 @@
 import snapshot from "../../db/mysql/schema-contract.json" with {type:'json'};
-export function schemaForVersion(version='0010') {
- if (!['0001','0002','0003','0004','0005','0006','0007','0008','0009','0010'].includes(version)) throw Error('Unknown schema version');
+export function schemaForVersion(version='0011') {
+ if (!['0001','0002','0003','0004','0005','0006','0007','0008','0009','0010','0011'].includes(version)) throw Error('Unknown schema version');
  const schema=structuredClone(snapshot);
  if(version<'0010')for(const name of ['deseret_production_archives','deseret_archive_files','deseret_package_sources','deseret_task_handovers'])delete schema.tables[name];
  if(version<'0009')for(const name of Object.keys(schema.tables))if(name.startsWith('deseret_'))delete schema.tables[name];
@@ -35,7 +35,7 @@ async function verifyKnownTestFixture(c, tables) {
  if(JSON.stringify(await indexes('mysql_test_rates_fixture'))!==JSON.stringify(await indexes('security_rate_limits')))throw Error('Test fixture indexes mismatch');
  return true;
 }
-export async function verifySchema(c, version='0010'){
+export async function verifySchema(c, version='0011'){
  const snapshot=schemaForVersion(version);
  const [tables]=await c.query('SELECT TABLE_NAME,ENGINE,TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()');
  const knownTestFixture=await verifyKnownTestFixture(c,tables);

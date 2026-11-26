@@ -11,7 +11,7 @@ import { createRequire, register } from "node:module";
 import type { ComponentType } from "react";
 import type { DeseretIntegrationState, DeseretScene } from "../lib/deseret-workspace";
 import { productionDraftKey } from "../lib/production-drafts";
-import { createHarness, finalReviewState, MAKER, PROJECT, QC, type Harness, type Row } from "./support/deseret-harness";
+import { createHarness, finalReviewState, LEAD, MAKER, PROJECT, QC, type Harness, type Row } from "./support/deseret-harness";
 
 register("./support/tsx-load.mjs", import.meta.url);
 const { JSDOM } = createRequire(import.meta.url)("jsdom") as {
@@ -67,6 +67,22 @@ async function mount(node: ReturnType<typeof React.createElement>) {
   await settle();
   return { host, unmount: async () => { await act(async () => { root.unmount(); }); host.remove(); } };
 }
+
+for (const locale of ["zh", "en"] as const) it(`disables final publication and explains outstanding QC (${locale})`, async () => {
+  const h = createHarness({ ...finalReviewState(), stage: "final_production" });
+  h.db.sqlite.prepare("UPDATE language_projects SET status='待质检' WHERE project_id=?").run(PROJECT);
+  const workspace = await h.service.workspace(LEAD, PROJECT);
+  globalThis.fetch = async () => Response.json(workspace);
+  const {host, unmount} = await mount(React.createElement(Panel, { projectId: PROJECT, locale }));
+  try {
+    const reason = [...host.querySelectorAll(".deseret-action small")].find(el =>
+      el.textContent?.includes(locale === "zh" ? "请先完成当前成片的质检" : "Complete internal QC"));
+    assert.ok(reason);
+    const button = reason.parentElement!.querySelector("button")!;
+    assert.equal(button.disabled, true);
+    assert.equal(button.getAttribute("aria-describedby"), reason.id);
+  } finally { await unmount(); }
+});
 
 describe("Deseret production panel scene editor", () => {
   let h: Harness;

@@ -1,4 +1,16 @@
 /** Presentation vocabulary only; never mutates workflow or delivery records. */
+export function publisherReviewStatus(source: unknown, status: unknown, stage: unknown) {
+  if (source !== "deseret_book") return "";
+  if (status === "待客户预览") return "待出版社审核";
+  if (status === "客户要求修改") return stage === "revision" ? "待分派返修" : "返修中";
+  return "";
+}
+
+export function publisherTaskDisplayStatus(source: unknown, status: unknown, stage: unknown) {
+  if (source === "deseret_book" && status === "待交付") return "待销售交付";
+  return publisherReviewStatus(source, status, stage) || projectStatusLabel(status);
+}
+
 export function projectStatusLabel(value: unknown): string {
   const status = String(value ?? "").trim();
   return status === "待补充资料" ? "待分配" : status === "待交付" ? "待最终确认" : status;

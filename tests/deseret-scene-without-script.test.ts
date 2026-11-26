@@ -8,10 +8,11 @@ import { beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { deseretSceneSubmission } from "../db/deseret-scene-submission";
 import { submissionNoteRequired } from "../lib/deseret-editor-stage";
+import { publisherTaskDisplayStatus } from "../lib/project-status";
 import { productionWorkspaceError } from "../lib/production-workspace-errors";
 import type { DeseretIntegrationState, DeseretReviewPackage, DeseretScene } from "../lib/deseret-workspace";
 import { PublicError } from "../lib/security-controls";
-import { createHarness, finalReviewState, LEAD, MAKER, OTHER_MAKER, PROJECT, type Harness, type Row } from "./support/deseret-harness";
+import { concludedEnvelope, createHarness, finalReviewState, LEAD, MAKER, OTHER_MAKER, PROJECT, type Harness, type Row } from "./support/deseret-harness";
 
 const HISTORICAL_SCRIPT = "Historical scene script kept inside AIGC.";
 const historical: DeseretScene = { id: "scene-1", order: 1, version: 1, duration: 30, script: HISTORICAL_SCRIPT, characterIds: [], voiceId: "", fileVersionId: "file-scene-v1", languageTaskId: "task-1" };
@@ -215,6 +216,71 @@ describe("Publication keeps historical scripts internal and never invents one", 
     assert.equal(Object.hasOwn(fresh, "script"), false);
   });
 
+  for (const status of ["待质检", "质检驳回"]) {
+    it(`does not publish an older final while the revision is ${status}`, async () => {
+      finalProduction([sceneA]);
+      h.db.sqlite.prepare("UPDATE language_projects SET status=? WHERE id='task-1'").run(status);
+      await rejectsCode(() => command(LEAD, "package.publish", { phase: "final", fileVersionId: "file-final", duration: 40 }), "DESERET_FINAL_QC_OPEN");
+    });
+  }
+
+  it("rechecks internal QC when publication races a new submission", async () => {
+    finalProduction([sceneA]);
+    const gate = h.holdFirst("SELECT 1 FROM language_projects WHERE project_id=? AND id IN");
+    const publish = command(LEAD, "package.publish", { phase: "final", fileVersionId: "file-final", duration: 40 });
+    await gate.arrived;
+    h.db.sqlite.prepare("UPDATE language_projects SET status='待质检' WHERE id='task-1'").run();
+    const before = h.snapshot();
+    gate.release();
+    await assert.rejects(publish, (error: PublicError) => error.code === "STALE_RECORD");
+    assert.deepEqual(h.snapshot(), before);
+  });
+
+  it("moves a single approved publisher version directly to delivery", async () => {
+    finalProduction([sceneA]);
+    h.db.sqlite.prepare("UPDATE deseret_project_links SET native_task_ids=? WHERE id=?").run(JSON.stringify(["task-1"]), PROJECT);
+    await command(LEAD, "package.publish", { phase: "final", fileVersionId: "file-final", duration: 40 });
+    const state = h.state(), pack = state.packages.at(-1)!;
+    pack.filesReady = true;
+    h.db.sqlite.prepare("UPDATE deseret_project_links SET state_json=? WHERE id=?").run(JSON.stringify(state), PROJECT);
+    await h.service.receive(...concludedEnvelope(undefined, "approve-first-final", {
+      packageId: pack.id, packageVersion: pack.version, conclusion: "approved",
+      decisions: pack.scenes.map(scene => ({ sceneId: scene.id, sceneVersion: scene.version, decision: "approved" })),
+    }));
+    assert.equal(h.state().stage, "delivery");
+    assert.equal(h.db.sqlite.prepare("SELECT status FROM language_projects WHERE id='task-1'").get()?.status, "待交付");
+    assert.equal(h.state().packages.filter(item => item.phase === "final").length, 1);
+  });
+
+  it("returns a published final to the same task and republishes its revised, QC-approved version", async () => {
+    finalProduction([sceneA]);
+    const publish = (fileVersionId: string) => command(LEAD, "package.publish", { phase: "final", fileVersionId, duration: 40 });
+    const taskStatus = () => h.db.sqlite.prepare("SELECT status FROM language_projects WHERE id='task-1'").get()?.status;
+    await publish("file-final");
+    assert.equal(taskStatus(), "待客户预览");
+    const transferred = h.state();
+    const pack = transferred.packages.at(-1)!;
+    pack.filesReady = true;
+    h.db.sqlite.prepare("UPDATE deseret_project_links SET state_json=? WHERE id=?").run(JSON.stringify(transferred), PROJECT);
+    await h.service.receive(...concludedEnvelope(undefined, "return-new-publication", {
+      packageId: pack.id, packageVersion: pack.version, decisions: pack.scenes.map(scene => ({
+        sceneId: scene.id, sceneVersion: scene.version, decision: "revision",
+      })),
+    }));
+    assert.equal(h.state().stage, "revision");
+    assert.equal(taskStatus(), "客户要求修改");
+    await command(LEAD, "revision.assign", {});
+    assert.equal(h.state().stage, "final_production");
+    await rejectsCode(() => publish("file-final"), "DESERET_NEW_VERSION_REQUIRED");
+    nativeVideo("file-revised", "final");
+    h.db.sqlite.prepare("INSERT INTO production_final_submissions VALUES ('sub-revised','file-revised','task-1',?)").run(MAKER);
+    h.db.sqlite.prepare("INSERT INTO production_submission_receipts VALUES ('sub-revised',?,?)").run(MAKER, JSON.stringify({ deseretPhase: "final", finalVersionId: "file-revised" }));
+    await publish("file-revised");
+    assert.equal(h.state().stage, "final_review");
+    assert.equal(h.state().packages.at(-1)?.version, 2);
+    assert.equal(taskStatus(), "待客户预览");
+  });
+
   it("joins only the stored scripts into the final scene, and adds none when no scene has one", async () => {
     finalProduction([historical, sceneA]);
     await command(LEAD, "package.publish", { phase: "final", fileVersionId: "file-final", duration: 40 });
@@ -229,4 +295,14 @@ describe("Publication keeps historical scripts internal and never invents one", 
     await command(LEAD, "package.publish", { phase: "final", fileVersionId: "file-final", duration: 40 });
     assert.equal(Object.hasOwn(publishedFinal(), "script"), false, JSON.stringify(publishedFinal()));
   });
+});
+
+
+it("shows the next sales handoff for the actual publisher stage", () => {
+  const label = (status: string, stage: string) => publisherTaskDisplayStatus("deseret_book", status, stage);
+  assert.equal(label("待客户预览", "final_review"), "待出版社审核");
+  assert.equal(label("客户要求修改", "revision"), "待分派返修");
+  assert.equal(label("客户要求修改", "final_production"), "返修中");
+  assert.equal(label("待交付", "delivery"), "待销售交付");
+  assert.equal(publisherTaskDisplayStatus("", "待客户预览", ""), "待客户预览");
 });

@@ -6540,6 +6540,9 @@ export async function createShareLink(
   if (!["qc_approved", "delivered", "final"].includes(String(file.status)))
     throw new PublicError("Only approved final files can be shared.");
   const workflowStatus = normalizedWorkflowStatus(file.workflow_status);
+  if (kind === "preview" && workflowStatus === "待客户预览" &&
+      await database().prepare("SELECT id FROM deseret_project_links WHERE id=?").bind(file.project_id).first())
+    throw new PublicError("Publisher review takes place in Deseret Book.", 409, "DESERET_REVIEW_REQUIRED");
   if (
     kind === "preview" &&
     !["待客户预览", "待交付", "已交付"].includes(workflowStatus)
@@ -9404,6 +9407,7 @@ export async function runWorkflowAction(
       throw new PublicError("Language task is not available.");
     if (
       action === "project.pause" &&
+      !(language.status === "待客户预览" && await db.prepare("SELECT id FROM deseret_project_links WHERE id=?").bind(language.project_id).first()) &&
       [
         "已暂停",
         "待质检",

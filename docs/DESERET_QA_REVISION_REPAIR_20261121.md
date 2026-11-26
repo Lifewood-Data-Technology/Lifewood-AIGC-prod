@@ -47,3 +47,15 @@
 本地联审版本。每条意见可包含 PNG、JPEG、MP4 或 MOV 参考文件，单个附件上限为 10 MiB。成片位置使用所审影片的时间。QA 退回时，AIGC 按原有 `issues[].frames[].file` 清单接收、校验和传输到对应语言任务。接收人员可预览图片、播放支持的视频或下载原文件。 既有截图按 PNG/JPEG MIME 类型识别，兼容没有扩展名或后缀不同的历史文件名。视频参考文件同时校验 MIME 类型和扩展名。
 
 Locally verified. Final-film feedback supports PNG, JPEG, MP4 and MOV references up to 10 MiB per file. Each timestamp locates the issue in the reviewed film. When QA returns selected issues, the existing manifest and transfer path deliver attachments to their language tasks. Recipients can preview images, play supported video or download the original. Legacy PNG and JPEG screenshots retain their original file names, including missing or different extensions. Video references require matching MIME types and extensions.
+
+## 出版社审阅与制作任务（2026-11-26，本地验证）
+
+1. 项目负责人发布审阅包后，包内语言任务进入「待出版社审核」。当前 Deseret 交接指定一种制作语言。成片待质检或质检驳回时，负责人须等待当前版本质检通过后再发布。
+2. 出版社退回后，相关任务进入「客户要求修改」，负责人在「出版社资料与审核」分派返修。
+3. 分派后，原剪辑师打开自己的语言任务，查看出版社意见及已传输的截图，使用「提交返修成片送审」提交新版本。原质检员审核通过后，负责人可再次发布。成片获出版社批准后进入交付。
+
+## Publisher review and production tasks (2026-11-26, verified locally)
+
+1. When the project lead publishes a review package, its language tasks enter publisher review. Each Deseret handoff specifies one production language. If the current final is awaiting QC or has been rejected by QC, the lead must wait for QC approval before publishing.
+2. A publisher return marks the affected tasks as requiring changes. The project lead assigns the revision in the publisher review panel.
+3. The assigned editor opens the existing language task, reads the publisher feedback and transferred frames, and selects **Submit revised final for QC**. After internal QC passes, the lead can publish the new version. Publisher approval moves the final to delivery.

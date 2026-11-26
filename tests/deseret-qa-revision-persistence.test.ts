@@ -34,9 +34,20 @@ describe("Final QA return: persistence of qaRevision (P1)", () => {
     assert.equal(state.packages[1].conclusion, "revision");
     assert.deepEqual(state.revisionSceneIds, ["final-task-1", "final-task-2"]);
     assert.equal(state.stage, "revision");
-    assert.deepEqual(h.db.sqlite.prepare("SELECT id,status FROM language_projects WHERE project_id=? ORDER BY id").all(PROJECT).map(row => ({ ...row })), [{ id: "task-1", status: "制作中" }, { id: "task-2", status: "制作中" }]);
+    assert.deepEqual(h.db.sqlite.prepare("SELECT id,status FROM language_projects WHERE project_id=? ORDER BY id").all(PROJECT).map(row => ({ ...row })), [{ id: "task-1", status: "客户要求修改" }, { id: "task-2", status: "客户要求修改" }]);
     assert.equal(materialRows().length, 0);
     assert.equal((h.db.sqlite.prepare("SELECT COUNT(*) AS n FROM deseret_inbox WHERE id='evt-final-revision' AND state='complete'").get() as Row).n, 1);
+  });
+
+  it("keeps the revision on the original tasks after assignment and preserves pending internal QC", async () => {
+    h.db.sqlite.prepare("UPDATE language_projects SET status='待质检' WHERE id='task-2'").run();
+    await receive(summary());
+    const result = await h.service.command(LEAD, PROJECT, {
+      action: "revision.assign", requestId: "assign-existing-tasks", expectedRevision: h.state().revision, payload: {},
+    });
+    assert.equal(result.stage, "final_production");
+    assert.deepEqual(h.db.sqlite.prepare("SELECT status FROM language_projects WHERE project_id=? ORDER BY id")
+      .all(PROJECT).map(row => row.status), ["客户要求修改", "待质检"]);
   });
 
   it("persists text, interval and framed issues in the publisher's order, plus one transfer task per image", async () => {

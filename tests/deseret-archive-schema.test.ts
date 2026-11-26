@@ -15,9 +15,10 @@ const migration = readFileSync(new URL("../db/mysql/migrations/0010-deseret-prod
 type Table = { columns: Record<string, { name: string }>; indexes: Record<string, { name: string; columns: string[]; isUnique: boolean }> };
 
 describe("schema 0010", () => {
-  it("is the current migration in the runner, the version checks and the contract", () => {
-    assert.equal(migrationNames.at(-1), "0010-deseret-production-archives.sql");
-    assert.equal(currentSchemaVersion, "0010");
+  it("is registered in the runner, the version checks and the contract", () => {
+    // 0011 is data only and follows it (tests/deseret-publisher-status-migration.test.ts).
+    assert.equal(migrationNames[9], "0010-deseret-production-archives.sql");
+    assert.ok(currentSchemaVersion >= "0010");
     for (const table of TABLES) {
       assert.ok((schemaForVersion("0010").tables as Record<string, unknown>)[table], table);
       assert.ok(!(schemaForVersion("0009").tables as Record<string, unknown>)[table], `${table} is not part of 0009`);

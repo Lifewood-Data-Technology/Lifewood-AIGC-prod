@@ -374,6 +374,8 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
     const payload = envelope.payload;
     const pack = state.packages.find(item => item.id === payload.packageId && !item.withdrawn);
     if (!pack || !pack.filesReady || (payload.packageVersion !== undefined ? pack.version !== payload.packageVersion : envelope.type !== "author.feedback")) reject("The review publication is unavailable.", "DESERET_PACKAGE_CONFLICT", 409);
+    const at = now();
+    const taskUpdates: DatabaseStatement[] = [];
     let revisionFiles: HandoffMaterial[] = [];
     if (envelope.type === "review.concluded") {
       const reviewedTaskIds = [...new Set(pack.files.map(file => file.languageTaskId))];
@@ -418,6 +420,12 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
         state.authorFeedback.find(comment => comment.id === payload.authorFeedbackId)!.processing = { decision: "revision_requested", note: processing.note, processedBy: processing.processedBy, processedAt: processing.processedAt };
       }
       if (!authorRevision) pack.conclusion = payload.conclusion as "approved" | "revision";
+      const revisionTasks = new Set(pack.scenes.filter(scene => changed.includes(scene.id)).map(scene => scene.languageTaskId));
+      for (const taskId of reviewedTaskIds) {
+        const approvedStatus = pack.phase === "final" && payload.conclusion === "approved" ? "待交付" : "制作中";
+        const status = revisionTasks.has(taskId) ? "客户要求修改" : approvedStatus;
+        taskUpdates.push(db.prepare("UPDATE language_projects SET status=?,updated_at=?,revision=revision+1 WHERE project_id=? AND id=? AND status NOT IN ('待质检','质检驳回','已暂停','已交付','已归档','已终止')").bind(status, at, row.id, taskId));
+      }
       state.revisionSceneIds = changed;
       const taskIds = JSON.parse(String(row.native_task_ids)) as string[];
       const finalApproved = taskIds.every(taskId => state.packages.filter(item => item.phase === "final" && !item.withdrawn && item.files.some(file => file.languageTaskId === taskId)).at(-1)?.conclusion === "approved");
@@ -463,11 +471,10 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
       (envelope.type === "author.feedback" ? state.authorFeedback : state.feedback).push(feedback);
     }
     state.revision += 1;
-    const at = now();
     const response = { accepted: true, eventId: envelope.eventId };
     await guardedMutation(db, `${context.access.sql} AND EXISTS (SELECT 1 FROM deseret_project_links WHERE id=? AND revision=?)${envelope.type === "review.concluded" ? " AND NOT EXISTS(SELECT 1 FROM language_projects WHERE project_id=? AND id IN (SELECT value FROM json_each(?)) AND status IN ('已暂停','已交付','已归档','已终止'))" : ""}`, [...context.access.values, String(row.id), Number(row.revision), ...(envelope.type === "review.concluded" ? [String(row.id), JSON.stringify([...new Set(pack.files.map(file => file.languageTaskId))])] : [])], [
       db.prepare("UPDATE deseret_project_links SET state_json=?,revision=revision+1,updated_at=? WHERE id=?").bind(JSON.stringify(state), at, row.id),
-      ...(envelope.type === "review.concluded" ? [db.prepare("UPDATE language_projects SET status=?,updated_at=?,revision=revision+1 WHERE project_id=? AND id IN (SELECT value FROM json_each(?)) AND status NOT IN ('已交付','已归档','已终止')").bind(pack.phase === "final" && payload.conclusion === "approved" ? "待交付" : "制作中", at, row.id, JSON.stringify([...new Set(pack.files.map(file => file.languageTaskId))]))] : []),
+      ...taskUpdates,
       ...(envelope.type === "review.concluded" && deps.projectSummaryStatement ? [deps.projectSummaryStatement(String(row.id))] : []),
       responseStatement(db, envelope.eventId, "deseret", String(row.id), hash, response, at),
       serviceAuditStatement(db, String(row.id), envelope, context.actor.email, at),
@@ -701,7 +708,8 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
       const controlledTaskIds = packTasks.filter(taskId => state.packages.filter(item => !item.withdrawn && item.files.some(file => file.languageTaskId === taskId)).at(-1)?.id === pack.id);
       pack.withdrawn = true;
       pack.filesReady = false;
-      if (controlledTaskIds.length) extra.push(db.prepare("UPDATE language_projects SET paused_from_status=CASE WHEN status='已暂停' THEN '制作中' ELSE paused_from_status END,status=CASE WHEN status='已暂停' THEN '已暂停' ELSE '制作中' END,revision=revision+1,updated_at=? WHERE project_id=? AND id IN (SELECT value FROM json_each(?)) AND status NOT IN ('已交付','已归档','已终止')").bind(at, projectId, JSON.stringify(controlledTaskIds)));
+      if (controlledTaskIds.length) extra.push(db.prepare("UPDATE language_projects SET paused_from_status=CASE WHEN status='已暂停' THEN '制作中' ELSE paused_from_status END,status=CASE WHEN status='已暂停' THEN '已暂停' WHEN status IN ('待质检','质检驳回') THEN status ELSE '制作中' END,revision=revision+1,updated_at=? WHERE project_id=? AND id IN (SELECT value FROM json_each(?)) AND status NOT IN ('已交付','已归档','已终止')").bind(at, projectId, JSON.stringify(controlledTaskIds)));
+      if (controlledTaskIds.length && deps.projectSummaryStatement) extra.push(deps.projectSummaryStatement(projectId));
       if (controlsProduction || (state.stage === "delivery" && controlledTaskIds.length > 0)) {
         const hasApprovedStoryboard = packTasks.length > 0 && packTasks.every(taskId => currentStoryboardApproved(state,taskId));
         state.stage = pack.phase === "final" && hasApprovedStoryboard ? "final_production" : "production";
@@ -749,6 +757,14 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
       if (files.some(file => !file || !file.qualityPassed || !file.storageReady)) reject("Every published file requires completed native internal quality approval.", "DESERET_QUALITY_REQUIRED", 409);
       const verified = [...new Map((files as IntegrationNativeFile[]).map(file => [file.id, file])).values()];
       const publishedTaskIds = [...new Set(verified.map(file => file.languageTaskId))];
+      if (phase === "final") {
+        const unfinishedQc = "SELECT 1 FROM language_projects WHERE project_id=? AND id IN (SELECT value FROM json_each(?)) AND status IN ('待质检','质检驳回')";
+        const scope = [projectId, JSON.stringify(publishedTaskIds)];
+        if (await db.prepare(unfinishedQc).bind(...scope).first())
+          reject("Complete internal quality review before publishing the final.", "DESERET_FINAL_QC_OPEN", 409);
+        writeGuards.push(`NOT EXISTS(${unfinishedQc})`);
+        writeValues.push(...scope);
+      }
       if (await db.prepare("SELECT id FROM language_projects WHERE project_id=? AND id IN (SELECT value FROM json_each(?)) AND status IN ('已暂停','已交付','已归档','已终止') LIMIT 1").bind(projectId, JSON.stringify(publishedTaskIds)).first()) reject("The production task is not open for publication.", "DESERET_PRODUCTION_BLOCKED", 409);
       writeGuards.push("NOT EXISTS(SELECT 1 FROM language_projects WHERE project_id=? AND id IN (SELECT value FROM json_each(?)) AND status IN ('已暂停','已交付','已归档','已终止'))");
       writeValues.push(projectId, JSON.stringify(publishedTaskIds));
@@ -767,6 +783,8 @@ export function createDeseretIntegrationService(deps: IntegrationDependencies) {
       const handoverGuard = await publicationHandoverGuard(db, scenes.map(scene => scene.languageTaskId));
       writeGuards.push(handoverGuard.sql);
       writeValues.push(...handoverGuard.values);
+      extra.push(db.prepare("UPDATE language_projects SET status='待客户预览',updated_at=?,revision=revision+1 WHERE status NOT IN ('待质检','质检驳回') AND project_id=? AND id IN (SELECT value FROM json_each(?))").bind(at, projectId, JSON.stringify(publishedTaskIds)));
+      if (deps.projectSummaryStatement) extra.push(deps.projectSummaryStatement(projectId));
       state.packages.push(pack);
       state.stage = phase === "final" ? "final_review" : "storyboard_review";
       state.revisionSceneIds = [];

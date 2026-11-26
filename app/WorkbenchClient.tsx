@@ -32,7 +32,7 @@ import { browserRandomUUID } from "../lib/browser-crypto";
 import { copyText } from "../lib/clipboard";
 import {folderTreeUploadPurpose,uploadTypeError,uploadAccept} from "../lib/upload-policy";
 import {uploadDisplayMime,type UploadedFileReference} from "../lib/upload-file-reference";
-import { projectStatusLabel, projectStatusTone } from "../lib/project-status";
+import { projectStatusLabel, projectStatusTone, publisherReviewStatus, publisherTaskDisplayStatus } from "../lib/project-status";
 import { salesFinalFile, salesPreviewStatuses, salesDeliveryStatuses } from "../lib/sales-final-file";
 import {uploadWithFeedback,uploadOrigin,uploadActivityEvent,type UploadActivity} from "../lib/upload-activity";
 import DialogSections from "./DialogSections";
@@ -640,6 +640,10 @@ const englishStatus: Record<string, string> = {
   待质检: "Awaiting quality review",
   质检驳回: "Review rejected",
   部分语言待修改: "Some languages need revision",
+  待销售交付: "Awaiting sales delivery",
+  待出版社审核: "Awaiting publisher review",
+  待分派返修: "Awaiting revision assignment",
+  返修中: "Revision in progress",
   待客户预览: "Awaiting customer preview",
   客户要求修改: "Customer revision requested",
   待最终确认: "Awaiting final confirmation",
@@ -1193,7 +1197,7 @@ function projectDisplayStatus(project: Row) {
   const total = n(project.language_count);
   const returned = n(project.language_revision_count);
   if (total > 1 && returned > 0 && returned < total) return "部分语言待修改";
-  return projectStatusLabel(project.workflow_status);
+  return publisherTaskDisplayStatus(project.source_system, project.workflow_status, project.deseret_stage);
 }
 
 function reviewTaskLanguage(platform: Platform, row: Row) {
@@ -6895,7 +6899,7 @@ function ProjectsPage({
         (!clientId || item.client_id === clientId) &&
         (!salesFilter || s(item.project_owner_email) === salesFilter) &&
         (!region || item.region === region) &&
-        (!status || projectStatusLabel(item.workflow_status) === status) &&
+        (!status || projectDisplayStatus(item) === status) &&
         (!priority || s(item.priority) === priority) &&
         (!dueFilter ||
           (dueFilter === "overdue"
@@ -7083,7 +7087,7 @@ function ProjectsPage({
                 onChange={(event) => setStatus(event.target.value)}
               >
                 <option value="">{locale === "zh" ? "状态：全部" : "Status: all"}</option>
-                {[...new Set(platform.workflowStatuses.map(projectStatusLabel))].filter((item) => item !== "待交付").map((item) => (
+                {[...new Set([...platform.workflowStatuses.map(projectStatusLabel), ...platform.projects.map(projectDisplayStatus)])].filter((item) => item !== "待交付").map((item) => (
                   <option key={item} value={item}>
                     {labelStatus(item, locale)}
                   </option>
@@ -8580,7 +8584,7 @@ function EditorUploadPanel({
       <div className="production-actions">
         <button className="secondary-button" onClick={() => openProductionWorkspace(languageId, "files")}>{locale === "zh" ? "查看任务文件" : "View task files"}</button>
         <button className="secondary-button" onClick={() => checkpointDraftOffer ? setCheckpointDialog("draft") : openProductionWorkspace(languageId, "checkpoint")}>{locale === "zh" ? "更新进度 / 保存检查点" : "Update progress / save checkpoint"}</button>
-        <button className="primary-button" disabled={!uploadOpen || !productionContextReady || submissionClosed} title={deseretTask && !productionContextReady ? (locale === "zh" ? "正在核对制作阶段。" : "Checking the production stage.") : undefined} onClick={() => openProductionWorkspace(languageId, "final")}>{deseretTask ? editorUploadLabel(deseretStage,locale) : locale === "zh" ? "上传成片" : "Upload final"}</button>
+        <button className="primary-button" disabled={!uploadOpen || !productionContextReady || submissionClosed} title={deseretTask && !productionContextReady ? (locale === "zh" ? "正在核对制作阶段。" : "Checking the production stage.") : undefined} onClick={() => openProductionWorkspace(languageId, "final")}>{deseretTask ? editorUploadLabel(deseretStage, locale, false, phase?.finalRevision) : locale === "zh" ? "上传成片" : "Upload final"}</button>
         <button className="secondary-button" onClick={() => openProductionWorkspace(languageId, "history")}>{locale === "zh" ? "成片详情" : "Final details"}</button>
       </div>
       {!uploadOpen && <p className="inline-warning">{lockMessage}</p>}
@@ -9218,6 +9222,9 @@ function SalesProjectWorkflow({
         {[...visibleLanguages].sort((left,right)=>compact ? s(left.video_id || left.video_name).localeCompare(s(right.video_id || right.video_name)) : 0).map((language, index, ordered) => {
           const languageId = s(language.id);
           const status = s(language.status);
+          const stage = language.deseret_stage ?? project.deseret_stage;
+          const publisherStatus = publisherReviewStatus(project.source_system, status, stage);
+          const displayStatus = publisherTaskDisplayStatus(project.source_system, status, stage);
           const final = salesFinalFile(platform.files, languageId);
           const audioTracks = platform.files
             .filter(
@@ -9264,7 +9271,7 @@ function SalesProjectWorkflow({
             <article className={compact ? "sales-compact-language" : "sales-workflow-card"} key={languageId}>
               {compact ? <header className="sales-language-row">
                 <strong>{index === 0 || s(ordered[index-1].video_id || ordered[index-1].video_name) !== s(language.video_id || language.video_name) ? s(language.video_name) || s(project.name) : ""}</strong>
-                <span>{s(language.language)}</span><Status value={language.status} locale={locale}/>
+                <span>{s(language.language)}</span><Status value={displayStatus} locale={locale}/>
                 <div className="sales-language-actions">{canExpand ? <button className="link-button" aria-expanded={expandedLanguage === languageId} onClick={()=>{if(mayLeaveDrafts(locale))setExpandedLanguage(expandedLanguage === languageId ? "" : languageId);}}>{expandedLanguage === languageId ? (zh ? "收起" : "Collapse") : ["已交付","已归档"].includes(status) ? (zh ? "查看交付" : "View delivery") : status === "待交付" ? (zh ? "处理交付" : "Handle delivery") : status === "待最终确认" ? (zh ? "查看确认" : "Review confirmation") : (zh ? "预览成片" : "Preview final")}</button> : <span className="muted">—</span>}
                 <RowMenu label={zh ? "更多" : "More"}><button onClick={()=>openFiles(s(project.id),languageId)}>{zh ? "查看任务文件" : "View task files"}</button>{platform.permissions.canUpload && <button onClick={()=>setUploadLanguage(language)}>{zh ? "上传客户素材" : "Upload client assets"}</button>}</RowMenu></div>
               </header> : <header>
@@ -9274,7 +9281,7 @@ function SalesProjectWorkflow({
                     {s(language.language)} · {s(project.client_name)}
                   </small>
                 </div>
-                <Status value={language.status} locale={locale} />
+                <Status value={displayStatus} locale={locale} />
               </header>}
               {(!compact || (expandedLanguage === languageId && canExpand)) && <div className="sales-language-expanded">
               {!compact && status === "待补充资料" ? (
@@ -9313,7 +9320,7 @@ function SalesProjectWorkflow({
                 </section>
               ) : null}
               {mode === "combined" && !compact ? <div className="production-file-actions"><button type="button" className="secondary-button" onClick={()=>openBusinessFiles(s(project.id),languageId)}>{zh?"查看任务文件":"View task files"}</button>{platform.permissions.canUpload&&status!=="待补充资料"&&<button type="button" className="secondary-button" onClick={()=>setUploadLanguage(language)}>{zh?"上传客户素材":"Upload client assets"}</button>}</div> : null}
-              <div className="sales-stage-strip">
+              {project.source_system !== "deseret_book" && <div className="sales-stage-strip">
                 {(zh
                   ? ["质检通过", "客户预览", "最终确认", "已交付"]
                   : ["QC passed", "Customer preview", "Final confirmation", "Delivered"]
@@ -9323,7 +9330,7 @@ function SalesProjectWorkflow({
                     {label}
                   </span>
                 ))}
-              </div>
+              </div>}
               {final ? (
                 <div className="sales-preview-layout">
                   <div className="sales-video">
@@ -9380,7 +9387,9 @@ function SalesProjectWorkflow({
                         ))}
                       </div>
                     ) : null}
-                    {status === "待客户预览" ? (
+                    {publisherStatus ? (
+                      <div className="workflow-message"><strong>{labelStatus(publisherStatus, locale)}</strong></div>
+                    ) : status === "待客户预览" ? (
                       <>
                         <div className="sales-link-row">
                           {previewShare ? (
@@ -9605,6 +9614,8 @@ function SalesProjectWorkflow({
                     )}
                   </fieldset>
                 </div>
+              ) : publisherStatus ? (
+                <div className="workflow-message"><strong>{labelStatus(publisherStatus, locale)}</strong></div>
               ) : (
                 <div className="workflow-message">
                   <strong>
@@ -9738,7 +9749,7 @@ function ProjectLifecyclePanel({
           <div className="lifecycle-list">
         {video.tasks.map((language) => {
           const status = s(language.status);
-          const pausable = [
+          const pausable = (language.source_system === "deseret_book" && status === "待客户预览") || [
             "待补充资料",
             "待分配",
             "制作中",
@@ -10547,7 +10558,7 @@ function ProjectDetailPage({
         {access === "client" ? <div className="sales-project-meta"><Status value={projectDisplayStatus(selected)} locale={locale}/><span>{locale === "zh" ? "项目负责人" : "Project owner"}：{s(selected.project_owner_name) || (locale === "zh" ? "未分配" : "Unassigned")}</span><span>{locale === "zh" ? "交付截止" : "Delivery deadline"}：{selected.due_date ? formatDate(selected.due_date,locale) : (locale === "zh" ? "未设置" : "Not set")}</span><span>{locale === "zh" ? `${projectVideos.length} 个视频 · ${allLanguages.length} 个语言版本` : `${projectVideos.length} videos · ${allLanguages.length} language versions`}</span></div> : <div className="project-summary">
           <div>
             <span>{t.status}</span>
-            <Status value={access === "production" && focusLanguageId ? s(languages[0]?.status) : projectDisplayStatus(selected)} locale={locale} />
+            <Status value={access === "production" && focusLanguageId ? publisherTaskDisplayStatus(selected.source_system, languages[0]?.status, selected.deseret_stage) : projectDisplayStatus(selected)} locale={locale} />
             <small>{access === "production" && focusLanguageId ? s(selected.name) : projectProgressSummary(selected, locale)}</small>
           </div>
           <div>
@@ -18342,6 +18353,7 @@ function SharesPage({
           <DataListTable className="work-table-wrap" ariaLabel={locale === "zh" ? "数据表格" : "Data table"}><table className="work-table preview-queue-table"><thead><tr><th>{t.project}</th><th>{t.customer}</th><th>{t.language}</th><th>{t.status}</th><th>{locale === "zh" ? "成片及链接" : "Final file and links"}</th><th>{t.actions}</th></tr></thead><tbody>
             {queue.map((item) => {
               const languageId = s(item.id);
+              const publisherStatus = publisherReviewStatus(item.source_system, item.status, item.deseret_stage);
               const final = salesFinalFile(platform.files, languageId, salesPreviewStatuses);
               const links = previewLinks.filter(
                 (link) => s(link.language_project_id) === languageId,
@@ -18350,9 +18362,9 @@ function SharesPage({
               const expanded = expandedLanguageId === languageId;
               return (
                 <Fragment key={languageId}>
-                  <tr><td><strong>{s(item.project_name)}</strong></td><td>{s(item.client_name)}</td><td>{languageLabel(item.language_code, item.language, locale)}</td><td><Status value={item.status} locale={locale}/></td>
+                  <tr><td><strong>{s(item.project_name)}</strong></td><td>{s(item.client_name)}</td><td>{languageLabel(item.language_code, item.language, locale)}</td><td><Status value={publisherStatus || item.status} locale={locale}/></td>
                     <td><strong>{final ? s(final.original_name) : "—"}</strong><small>{latest ? `${formatDate(latest.expires_at, locale)} · ${n(latest.access_count)} ${locale === "zh" ? "次访问" : "visits"}` : locale === "zh" ? "尚未创建预览链接" : "No preview link yet"}</small></td>
-                    <td><div className="table-actions"><button type="button" onClick={() => setPreviewLanguageId(languageId)}>{locale === "zh" ? "处理客户预览" : "Handle preview"}</button><button type="button" aria-expanded={expanded} onClick={() => setExpandedLanguageId(expanded ? "" : languageId)}>{expanded ? (locale === "zh" ? "收起记录" : "Hide history") : (locale === "zh" ? "预览记录" : "Preview history")}</button></div></td>
+                    <td><div className="table-actions"><button type="button" onClick={() => setPreviewLanguageId(languageId)}>{publisherStatus ? (locale === "zh" ? "查看状态" : "View status") : (locale === "zh" ? "处理客户预览" : "Handle preview")}</button><button type="button" aria-expanded={expanded} onClick={() => setExpandedLanguageId(expanded ? "" : languageId)}>{expanded ? (locale === "zh" ? "收起记录" : "Hide history") : (locale === "zh" ? "预览记录" : "Preview history")}</button></div></td>
                   </tr>
                   {expanded ? (
                     <tr className="preview-expanded"><td colSpan={6}><div className="preview-link-history">
